@@ -220,7 +220,10 @@ async fn get_media_formats(app: AppHandle, url: String, headers: Vec<(String, St
 /// yt-dlp takes several seconds, and the page's menu, the prefetch on hover and
 /// the "Download File Info" window all ask about the same video.
 #[derive(Default)]
-struct FormatCache(Mutex<std::collections::HashMap<String, (std::time::Instant, Arc<tokio::sync::OnceCell<CmdResult<MediaInfo>>>)>>);
+struct FormatCache(Mutex<std::collections::HashMap<String, (std::time::Instant, FormatCell)>>);
+
+/// One answer, filled in by whoever asks first; later askers wait for it.
+type FormatCell = Arc<tokio::sync::OnceCell<CmdResult<MediaInfo>>>;
 
 const FORMAT_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(20 * 60);
 
