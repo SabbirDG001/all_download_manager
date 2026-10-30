@@ -26,6 +26,9 @@ pub struct Settings {
     pub max_active: usize,
     /// User-Agent header to send; the app's own name when unset.
     pub user_agent: Option<String>,
+    /// Show the download dialog for links sent by the browser extension,
+    /// instead of starting them straight away.
+    pub confirm_browser_downloads: bool,
 }
 
 impl Default for Settings {
@@ -33,7 +36,14 @@ impl Default for Settings {
         let download_dir = dirs::download_dir()
             .or_else(|| dirs::home_dir().map(|h| h.join("Downloads")))
             .unwrap_or_else(|| PathBuf::from("."));
-        Self { download_dir, temp_dir: None, connections: 8, max_active: 3, user_agent: None }
+        Self {
+            download_dir,
+            temp_dir: None,
+            connections: 8,
+            max_active: 3,
+            user_agent: None,
+            confirm_browser_downloads: true,
+        }
     }
 }
 

@@ -31,6 +31,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force portable | Out-Null
           Copy-Item target/release/AllDownloadManager.exe portable/
+          Copy-Item -Recurse extension portable/extension
           # An empty settings.json next to the program turns on portable mode.
           Set-Content -Path portable/settings.json -Value '{}'
 
@@ -45,3 +46,9 @@ jobs:
         with:
           name: AllDownloadManager-portable
           path: portable/
+
+      - name: Upload browser extension
+        uses: actions/upload-artifact@v4
+        with:
+          name: AllDownloadManager-extension
+          path: extension/

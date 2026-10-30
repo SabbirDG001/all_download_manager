@@ -233,9 +233,10 @@ fn build_client(opts: &DownloadOptions) -> Result<Client> {
         .user_agent
         .clone()
         .unwrap_or_else(|| concat!("AllDownloadManager/", env!("CARGO_PKG_VERSION")).to_string());
+    // The user agent goes first so a User-Agent header (from the browser) wins.
     Ok(Client::builder()
-        .default_headers(headers)
         .user_agent(user_agent)
+        .default_headers(headers)
         .connect_timeout(Duration::from_secs(15))
         .read_timeout(Duration::from_secs(30))
         .build()?)

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>All Download Manager</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <img src="icons/32.png" alt="" width="24" height="24">
+    <h1>All Download Manager</h1>
+  </header>
+
+  <div id="status" class="status checking">
+    <span class="dot"></span><span id="status-text">Checking the app…</span>
+  </div>
+  <p id="error" class="error" hidden></p>
+
+  <label class="toggle">
+    <input type="checkbox" id="catch">
+    <span class="switch"></span>
+    <span>Catch browser downloads</span>
+  </label>
+  <p class="hint">When on, files you download go to the app instead of the browser. Right-click a link to send it on demand.</p>
+
+  <button id="open" class="btn">Open the app</button>
+
+  <script src="popup.js"></script>
+</body>
+</html>

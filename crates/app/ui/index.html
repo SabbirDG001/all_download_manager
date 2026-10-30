@@ -92,7 +92,8 @@
   <!-- Add downloads -->
   <dialog id="dlg-add">
     <form method="dialog" id="form-add">
-      <h2>Add download</h2>
+      <h2 id="add-title">Add download</h2>
+      <p id="add-source" class="muted small" hidden></p>
       <label class="field">
         <span>Link (one per line for several)</span>
         <textarea id="add-urls" rows="3" required spellcheck="false" placeholder="https://example.com/file.zip"></textarea>
@@ -162,6 +163,14 @@
         <span>User agent <small>(optional)</small></span>
         <input id="set-user-agent" type="text" spellcheck="false" placeholder="AllDownloadManager">
       </label>
+      <label class="check"><input id="set-confirm-browser" type="checkbox"> Ask before downloading links from the browser</label>
+      <div class="extension-box">
+        <div>
+          <b>Browser extension</b>
+          <p class="muted small">For Chrome, Brave or Edge: open the extensions page, turn on Developer mode, click <b>Load unpacked</b> and pick the extension folder.</p>
+        </div>
+        <button type="button" class="btn" id="set-open-extension">Show extension folder</button>
+      </div>
       <p class="muted small" id="set-info"></p>
       <div class="actions">
         <button type="button" class="btn" data-close>Cancel</button>

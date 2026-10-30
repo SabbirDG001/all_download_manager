@@ -309,16 +309,43 @@ function urlsFrom(text) {
   return text.split(/\s+/).map((s) => s.trim()).filter(looksLikeUrl);
 }
 
-async function openAdd(prefill = "") {
+// Request headers (cookies, referrer) of a download sent by the browser.
+let addHeaders = [];
+
+async function openAdd(prefill = "", fromBrowser = null) {
   if (!state.settings) await loadSettings();
+  addHeaders = fromBrowser?.headers || [];
+  $("#add-title").textContent = fromBrowser ? "Download from browser" : "Add download";
+  let source = "";
+  if (fromBrowser?.referrer) {
+    try { source = `From ${new URL(fromBrowser.referrer).host}`; } catch { /* not a URL */ }
+  }
+  $("#add-source").textContent = source;
+  $("#add-source").hidden = !source;
   $("#add-urls").value = prefill;
   $("#add-dir").value = state.settings.download_dir;
-  $("#add-name").value = "";
+  $("#add-name").value = fromBrowser?.filename || "";
   $("#add-start").checked = true;
   updateAddName();
   $("#dlg-add").showModal();
-  $("#add-urls").focus();
+  (fromBrowser ? $("#form-add button[type=submit]") : $("#add-urls")).focus();
 }
+
+// Downloads sent by the browser extension wait here for the dialog.
+const browserQueue = [];
+
+async function takeBrowserDownloads() {
+  browserQueue.push(...(await call("take_browser_downloads")));
+  showNextBrowserDownload();
+}
+
+function showNextBrowserDownload() {
+  if (dialogOpen() || browserQueue.length === 0) return;
+  const item = browserQueue.shift();
+  openAdd(item.url, item);
+}
+
+$("#dlg-add").addEventListener("close", () => setTimeout(showNextBrowserDownload, 0));
 
 function updateAddName() {
   const several = urlsFrom($("#add-urls").value).length > 1;
@@ -336,7 +363,9 @@ $("#form-add").addEventListener("submit", async (ev) => {
   const paused = !$("#add-start").checked;
   try {
     for (const url of urls) {
-      await call("add", { request: { url, dir, filename: urls.length === 1 ? filename : null, paused } });
+      await call("add", {
+        request: { url, dir, filename: urls.length === 1 ? filename : null, paused, headers: addHeaders },
+      });
     }
     $("#dlg-add").close();
   } catch { /* toast already shown */ }
@@ -373,6 +402,7 @@ async function openSettings() {
   $("#set-connections").value = s.connections;
   $("#set-max-active").value = s.max_active;
   $("#set-user-agent").value = s.user_agent || "";
+  $("#set-confirm-browser").checked = s.confirm_browser_downloads;
   $("#set-info").textContent = info.portable
     ? `Portable mode: settings and the download list are kept next to the program, in ${info.path}`
     : `Settings are saved in ${info.path}. For portable mode, put a settings.json file containing {} next to the program.`;
@@ -380,6 +410,7 @@ async function openSettings() {
 }
 
 $("#set-temp-clear").onclick = () => { $("#set-temp-dir").value = ""; };
+$("#set-open-extension").onclick = () => call("open_extension_folder").catch(() => {});
 
 $("#form-settings").addEventListener("submit", async (ev) => {
   ev.preventDefault();
@@ -390,6 +421,7 @@ $("#form-settings").addEventListener("submit", async (ev) => {
     connections: Number($("#set-connections").value),
     max_active: Number($("#set-max-active").value),
     user_agent: $("#set-user-agent").value.trim() || null,
+    confirm_browser_downloads: $("#set-confirm-browser").checked,
   };
   try {
     await call("save_settings", { settings });
@@ -509,6 +541,8 @@ window.addEventListener("unhandledrejection", (ev) => toast(`Unexpected error: $
     if (change.kind === "list") setAll(change.data);
     else updateOne(change.data);
   });
+  await listen("browser-download", () => takeBrowserDownloads());
   setAll(await call("list"));
-  loadSettings();
+  await loadSettings();
+  takeBrowserDownloads();
 })();

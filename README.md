@@ -9,8 +9,8 @@ Manager, with a browser extension for Chrome and Brave.
 |---|---|---|
 | 1 | Download engine + command-line tool (`crates/engine`) | done |
 | 2 | Desktop app (`crates/app`, Tauri) with download list, queue, settings, installer | done |
-| 3 | Chrome / Brave extension + Native Messaging bridge | next |
-| 4 | Video and audio detection (yt-dlp + ffmpeg) | planned |
+| 3 | Chrome / Brave / Edge extension (`extension/`) + Native Messaging bridge | done |
+| 4 | Video and audio detection (yt-dlp + ffmpeg) | next |
 | 5 | Scheduler, categories, speed limit | planned |
 
 ## Getting the Windows app
@@ -24,6 +24,8 @@ run, and download one of:
 - **AllDownloadManager-portable**: no install. Unzip anywhere (another drive,
   a USB stick) and run `AllDownloadManager.exe`. Settings and the download
   list stay in that folder.
+- **AllDownloadManager-extension**: the browser extension on its own (it is
+  also included in the installer and the portable folder).
 
 The app uses Microsoft Edge WebView2, which Windows 10 and 11 already have.
 
@@ -41,6 +43,47 @@ The app uses Microsoft Edge WebView2, which Windows 10 and 11 already have.
   downloads at the same time, user agent.
 - Follows the Windows light or dark theme.
 - Keyboard: Ctrl+N add, Delete delete, Ctrl+A select all, Enter open, Esc deselect.
+
+## Browser extension (Chrome, Brave, Edge)
+
+### Install
+
+1. Install the app and **open it once**. On every start it registers itself
+   with Chrome, Brave and Edge so the extension can reach it.
+2. In the browser, open `chrome://extensions` (Brave: `brave://extensions`,
+   Edge: `edge://extensions`) and turn on **Developer mode**.
+3. Click **Load unpacked** and choose the `extension` folder. To find it, open
+   the app's **Settings** and click **Show extension folder**. (It is in the
+   install folder, or next to `AllDownloadManager.exe` in the portable version.)
+4. Pin the extension. Its popup shows whether it can reach the app.
+
+### What it does
+
+- **Catches downloads:** when you download a file, the browser's download is
+  stopped and the app takes over. Turn this off in the extension's popup.
+- **Right-click menu:** "Download link with All Download Manager" on links,
+  images, video and audio.
+- **Keeps you logged in:** the browser's cookies, referrer and user agent are
+  sent with the link, so downloads that need a login still work.
+- **Asks first:** the app comes to the front with the download dialog, so you
+  can change the folder or name. Turn off "Ask before downloading links from
+  the browser" in Settings to start them straight away.
+- **Starts the app** if it isn't running.
+- **Never loses a download:** if the app can't be reached, the browser carries
+  on downloading as usual and the extension icon shows a "!".
+
+Downloads in incognito windows, and `blob:`/`data:` downloads made by web
+pages themselves, stay in the browser.
+
+### How it connects
+
+The browser starts `AllDownloadManager.exe` as a
+[Native Messaging](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging)
+host. That short-lived process passes the link to the running app over a
+local connection (127.0.0.1, protected by a random token stored in the data
+folder), starting the app first if needed. The extension's ID is fixed by
+the `key` in `extension/manifest.json`, so the registration works wherever
+the folder is unpacked.
 
 ## The engine
 

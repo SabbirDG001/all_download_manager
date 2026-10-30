@@ -1,11 +1,15 @@
 // No console window behind the app in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod bridge;
+
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use adm_engine::{AddRequest, Entry, Manager, Settings};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager as _, State};
+use serde_json::{json, Value};
+use tauri::{AppHandle, Emitter, Manager as _, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
@@ -97,14 +101,105 @@ fn show_in_folder(app: AppHandle, path: String) -> CmdResult<()> {
     app.opener().reveal_item_in_dir(path).map_err(|e| e.to_string())
 }
 
+/// A download sent by the browser, waiting for the user to confirm it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BrowserDownload {
+    url: String,
+    filename: Option<String>,
+    referrer: String,
+    headers: Vec<(String, String)>,
+}
+
+#[derive(Default)]
+struct PendingFromBrowser(Mutex<Vec<BrowserDownload>>);
+
+/// Hands the frontend the downloads that arrived from the browser.
+#[tauri::command]
+fn take_browser_downloads(pending: State<PendingFromBrowser>) -> Vec<BrowserDownload> {
+    std::mem::take(&mut *pending.0.lock().unwrap())
+}
+
+/// Opens the folder with the browser extension, for "Load unpacked".
+#[tauri::command]
+fn open_extension_folder(app: AppHandle) -> CmdResult<String> {
+    let dir = extension_dir(&app).ok_or("The extension folder wasn't found next to the app.")?;
+    app.opener().open_path(dir.display().to_string(), None::<&str>).map_err(|e| e.to_string())?;
+    Ok(dir.display().to_string())
+}
+
+fn extension_dir(app: &AppHandle) -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Ok(res) = app.path().resource_dir() {
+        candidates.push(res.join("extension"));
+    }
+    if let Some(dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(|p| p.to_path_buf())) {
+        candidates.push(dir.join("extension"));
+    }
+    // Running from a source checkout.
+    candidates.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../extension"));
+    candidates.into_iter().find(|d| d.join("manifest.json").exists()).and_then(|d| d.canonicalize().ok())
+}
+
+fn bring_to_front(window: &WebviewWindow) {
+    let _ = window.show();
+    let _ = window.unminimize();
+    // Windows only lets a background app take focus in some cases; briefly
+    // staying on top makes sure the window is seen.
+    let _ = window.set_always_on_top(true);
+    let _ = window.set_focus();
+    let _ = window.set_always_on_top(false);
+}
+
+/// Answers a message from the browser extension.
+fn handle_browser_request(app: &AppHandle, req: bridge::Request) -> Value {
+    let show = || {
+        if let Some(window) = app.get_webview_window("main") {
+            bring_to_front(&window);
+        }
+    };
+    match req.action.as_str() {
+        "ping" => bridge::ping_reply(),
+        "show" => {
+            show();
+            json!({ "ok": true })
+        }
+        "add" => {
+            let manager = app.state::<Manager>();
+            let filename = Some(req.filename.clone()).filter(|f| !f.is_empty());
+            if manager.settings().confirm_browser_downloads {
+                app.state::<PendingFromBrowser>().0.lock().unwrap().push(BrowserDownload {
+                    url: req.url.clone(),
+                    filename,
+                    referrer: req.referrer.clone(),
+                    headers: req.headers(),
+                });
+                let _ = app.emit("browser-download", ());
+                show();
+                json!({ "ok": true })
+            } else {
+                let request = AddRequest { url: req.url.clone(), filename, headers: req.headers(), ..Default::default() };
+                match manager.add(request) {
+                    Ok(_) => json!({ "ok": true }),
+                    Err(e) => json!({ "ok": false, "error": e.to_string() }),
+                }
+            }
+        }
+        other => json!({ "ok": false, "error": format!("unknown action '{other}'") }),
+    }
+}
+
 fn main() {
+    if bridge::is_host_launch() {
+        bridge::run_host();
+        return;
+    }
+
     tauri::Builder::default()
         // A second launch just brings the open window to the front.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
+                bring_to_front(&window);
             }
         }))
         .plugin(tauri_plugin_dialog::init())
@@ -122,6 +217,18 @@ fn main() {
                 },
             );
             app.manage(manager);
+            app.manage(PendingFromBrowser::default());
+
+            if let Err(e) = bridge::register() {
+                eprintln!("couldn't register with the browsers: {e}");
+            }
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let app = handle.clone();
+                if let Err(e) = bridge::serve(move |req| handle_browser_request(&app, req)).await {
+                    eprintln!("browser bridge stopped: {e}");
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -138,6 +245,8 @@ fn main() {
             pick_folder,
             open_file,
             show_in_folder,
+            take_browser_downloads,
+            open_extension_folder,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start All Download Manager");
