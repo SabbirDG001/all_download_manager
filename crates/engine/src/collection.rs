@@ -92,6 +92,7 @@ async fn playlist_json(url: &str, headers: &[(String, String)], tools: &MediaToo
     let mut cmd = tokio::process::Command::new(yt_dlp);
     cmd.args(["--flat-playlist", "--yes-playlist", "--dump-single-json", "--no-warnings", "--encoding", "utf-8"])
         .args(["--playlist-items", &format!("1:{MAX_ITEMS}")])
+        .args(tools.runtime_args())
         .args(crate::media::header_args(headers))
         .arg("--")
         .arg(url)
@@ -106,7 +107,7 @@ async fn playlist_json(url: &str, headers: &[(String, String)], tools: &MediaToo
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
         let msg = err.lines().rev().find_map(|l| l.strip_prefix("ERROR: ")).unwrap_or("yt-dlp couldn't read this playlist");
-        return Err(Error::Tool(msg.to_string()));
+        return Err(Error::Tool(crate::media::explain_error(msg, url, tools, &[])));
     }
     serde_json::from_slice(&out.stdout).map_err(|e| Error::Tool(e.to_string()))
 }

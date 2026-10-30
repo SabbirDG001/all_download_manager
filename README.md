@@ -44,6 +44,27 @@ The app uses Microsoft Edge WebView2, which Windows 10 and 11 already have.
 - Follows the Windows light or dark theme.
 - Keyboard: Ctrl+N add, Delete delete, Ctrl+A select all, Enter open, Esc deselect.
 
+## Download windows (like IDM)
+
+Downloads from the browser don't open the whole app:
+
+- **Download File Info:** a small window with the link, the folder, the file
+  name (or, for videos, the quality) and the size, with **Download Later**,
+  **Start Download** and **Cancel**. Turn off "Ask before downloading links
+  from the browser" in Settings to skip it.
+- **Progress window:** each started download gets its own small window with
+  status, size, downloaded, speed, time left and resume capability, **Pause**
+  and **Cancel**. **Show details** shows every connection's start position
+  and progress. When it's done, it offers **Open** and **Open folder**. It can
+  be turned off in Settings; double-click a download in the list to open it
+  again.
+- **Quality menu on video pages:** on YouTube and other video sites, the
+  **Download** button over a video lists the available qualities (4K … 144p,
+  MP3, M4A) with their sizes, right on the page.
+
+If a download fails, the reason is shown in red under its name in the list
+(right-click → **Copy error** to copy it).
+
 ## Tray and notifications
 
 - **System tray:** closing the window keeps downloads running in the
@@ -114,8 +135,11 @@ and from HLS/DASH streams, using two free helper programs:
 - **yt-dlp** gets the video out of the site. Required for video downloads.
 - **ffmpeg** joins separate video and audio (needed for 1080p and up on
   YouTube) and makes MP3s. Without it you get the best single file the site offers.
+- **Deno**, a JavaScript runtime that yt-dlp needs for **YouTube**. Without it
+  YouTube downloads fail. If Node.js is already installed, it is used instead
+  and Deno isn't needed.
 
-Install both from **Settings → Video and audio** (Install / Update buttons).
+Install them from **Settings → Video and audio** (Install / Update buttons).
 They go into a `tools` folder in the app's data folder (in portable mode,
 next to the program), and copies already on your `PATH` are used too. Keep
 yt-dlp updated: sites change often and new versions follow them.

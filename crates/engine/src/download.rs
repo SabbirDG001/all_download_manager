@@ -76,13 +76,15 @@ pub enum Event {
     Stage(String),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Default)]
 pub struct Progress {
     pub downloaded: u64,
     /// `None` when the server does not report the size.
     pub total: Option<u64>,
     /// Connections currently receiving data.
     pub connections: usize,
+    /// Each segment as [start, end, downloaded], for the per-connection view.
+    pub parts: Vec<[u64; 3]>,
 }
 
 /// Counters shared between the connections and the progress reporter.
@@ -232,6 +234,16 @@ pub(crate) async fn finish_file(part: &Path, opts: &DownloadOptions, name: &str)
     let target = unique_path(&final_dir, name);
     move_file(part, &target).await?;
     Ok(target)
+}
+
+/// Name, size and resume support of a link, asked before downloading (for
+/// the "Download File Info" window).
+pub async fn probe_link(url: &str, headers: &[(String, String)]) -> Result<crate::ProbeInfo> {
+    let opts = DownloadOptions { headers: headers.to_vec(), ..Default::default() };
+    let client = build_client(&opts)?;
+    let mut info = probe(&client, url).await?;
+    info.filename = sanitize_filename(&info.filename);
+    Ok(info)
 }
 
 /// The partial file and its resume state for a download named `name`.
@@ -505,6 +517,7 @@ fn progress(counters: &Counters, total: Option<u64>) -> Progress {
         downloaded: counters.downloaded.load(Ordering::Relaxed),
         total,
         connections: counters.active.load(Ordering::Relaxed),
+        parts: Vec::new(),
     }
 }
 
@@ -534,7 +547,11 @@ impl Reporter {
                     _ = ticker.tick() => {}
                     _ = token.cancelled() => return,
                 }
-                on_progress(progress(&counters, total));
+                let mut p = progress(&counters, total);
+                if let Some((state, _)) = &saver {
+                    p.parts = state.lock().unwrap().segments.iter().map(|s| [s.start, s.end, s.downloaded]).collect();
+                }
+                on_progress(p);
                 ticks += 1;
                 if ticks.is_multiple_of(SAVE_EVERY_TICKS) {
                     if let Some((state, path)) = &saver {

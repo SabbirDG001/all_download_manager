@@ -119,7 +119,7 @@ function createRow(e) {
   const tr = document.createElement("tr");
   tr.dataset.id = e.id;
   tr.innerHTML = `
-    <td><div class="name"><span class="ext"></span><span class="name-text"></span><span class="format-tag" hidden></span></div></td>
+    <td><div class="name"><span class="ext"></span><span class="name-lines"><span class="name-text"></span><span class="row-error" hidden></span></span><span class="format-tag" hidden></span></div></td>
     <td class="num size"></td>
     <td><div class="progress"><div class="bar"><div></div></div><span class="pct"></span></div></td>
     <td class="num speed"></td>
@@ -135,6 +135,10 @@ function updateRow(tr, e) {
   tr.dataset.status = e.status;
   tr.classList.toggle("selected", state.selected.has(e.id));
   tr.title = e.error ? `${e.url}\n\n${e.error}` : e.url;
+  // Why it failed, right under the name.
+  const errEl = tr.querySelector(".row-error");
+  errEl.textContent = e.status === "failed" && e.error ? e.error : "";
+  errEl.hidden = !errEl.textContent;
 
   const badge = tr.querySelector(".ext");
   badge.textContent = ext.slice(0, 4) || "file";
@@ -289,7 +293,7 @@ rows.addEventListener("dblclick", (ev) => {
 function openEntry(e) {
   if (!e) return;
   if (e.status === "completed" && e.path) call("open_file", { path: e.path });
-  else if (canResume(e)) call("resume", { ids: [e.id] });
+  else call("open_progress_window", { id: e.id });
 }
 
 // ---------- Toolbar ----------
@@ -547,7 +551,8 @@ $("#form-add").addEventListener("submit", async (ev) => {
   const quality = $("#add-quality").value;
   try {
     for (const url of urls) {
-      await call("add", {
+      // One link: its progress window opens, like IDM. Several: just the list.
+      await call(urls.length === 1 ? "add_and_watch" : "add", {
         request: {
           url, dir, paused, scheduled, media, quality, headers: addHeaders, title: addTitle,
           format: media && urls.length === 1 && formatsFor === url ? chosenFormat : null,
@@ -598,6 +603,7 @@ async function openSettings() {
   $("#set-autostart").checked = s.start_with_windows;
   $("#set-notify").checked = s.notify_on_finish;
   $("#set-complete-window").checked = s.show_complete_window;
+  $("#set-progress-window").checked = s.show_progress_window;
   $("#set-limit").value = s.speed_limit_kbps;
   refreshTools();
   $("#set-info").textContent = info.portable
@@ -615,7 +621,7 @@ async function refreshTools() {
   toolsStatus = await call("get_tools_status");
   for (const row of $$(".tool")) {
     const name = row.dataset.tool;
-    const info = name === "yt-dlp" ? toolsStatus.ytDlp : toolsStatus.ffmpeg;
+    const info = { "yt-dlp": toolsStatus.ytDlp, ffmpeg: toolsStatus.ffmpeg, deno: toolsStatus.deno }[name];
     const stateEl = row.querySelector(".tool-state");
     const btn = row.querySelector(".tool-btn");
     if (installing.has(name)) continue;
@@ -631,7 +637,12 @@ async function refreshTools() {
     } else {
       stateEl.textContent = "not installed: needed for YouTube and other video sites";
     }
-    const canInstall = name === "yt-dlp" || toolsStatus.canInstallFfmpeg;
+    if (name === "deno" && !info) {
+      stateEl.textContent = toolsStatus.otherJsRuntime
+        ? `not needed: ${toolsStatus.otherJsRuntime === "node" ? "Node.js" : toolsStatus.otherJsRuntime} is on your computer and will be used`
+        : "not installed: YouTube downloads need it";
+    }
+    const canInstall = name !== "ffmpeg" || toolsStatus.canInstallFfmpeg;
     btn.hidden = !canInstall || (info && !info.managed);
     btn.textContent = info ? "Update" : "Install";
     btn.disabled = false;
@@ -679,6 +690,7 @@ $("#form-settings").addEventListener("submit", async (ev) => {
     start_with_windows: $("#set-autostart").checked,
     notify_on_finish: $("#set-notify").checked,
     show_complete_window: $("#set-complete-window").checked,
+    show_progress_window: $("#set-progress-window").checked,
     speed_limit_kbps: Number($("#set-limit").value),
   };
   try {
@@ -707,6 +719,8 @@ document.addEventListener("contextmenu", (ev) => {
   menu.querySelector('[data-action="pause"]').disabled = !sel.some(canPause);
   menu.querySelector('[data-action="schedule"]').disabled = !sel.some((e) => e.status !== "completed" && e.status !== "scheduled");
   menu.querySelector('[data-action="copy"]').disabled = !single;
+  menu.querySelector('[data-action="copy-error"]').hidden = !(single && single.error);
+  menu.querySelector('[data-action="progress"]').disabled = !single || single.status === "completed";
   menu.hidden = false;
   const { innerWidth: w, innerHeight: h } = window;
   const r = menu.getBoundingClientRect();
@@ -733,6 +747,11 @@ menu.addEventListener("click", async (ev) => {
       try { await navigator.clipboard.writeText(sel[0].url); toast("Link copied"); }
       catch { toast("Couldn't copy the link"); }
       break;
+    case "copy-error":
+      try { await navigator.clipboard.writeText(sel[0].error || ""); toast("Error copied"); }
+      catch { toast("Couldn't copy the error"); }
+      break;
+    case "progress": call("open_progress_window", { id: sel[0].id }); break;
     case "delete": openDelete(sel); break;
   }
 });

@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use adm_engine::{
-    find_tools, install_ffmpeg, install_yt_dlp, list_collection, looks_like_collection, looks_like_media_page,
+    find_tools, install_deno, install_ffmpeg, install_yt_dlp, list_collection, looks_like_collection, looks_like_media_page,
     probe_media, tools_status, AddRequest, CancellationToken, Collection, Entry, Manager, MediaInfo, Progress,
     Settings, ToolsStatus,
 };
@@ -148,6 +148,7 @@ async fn install_tool(app: AppHandle, name: String) -> CmdResult<()> {
     let result = match name.as_str() {
         "yt-dlp" => install_yt_dlp(&dir, on_progress, CancellationToken::new()).await,
         "ffmpeg" => install_ffmpeg(&dir, on_progress, CancellationToken::new()).await,
+        "deno" => install_deno(&dir, on_progress, CancellationToken::new()).await,
         other => return Err(format!("unknown tool '{other}'")),
     };
     result.map(|_| ()).map_err(|e| e.to_string())
@@ -254,6 +255,8 @@ struct BrowserDownload {
     url: String,
     filename: Option<String>,
     media: bool,
+    /// Quality already picked on the page.
+    format: Option<adm_engine::MediaFormat>,
     /// Open the playlist / folder dialog for this link.
     playlist: bool,
     title: String,
@@ -261,13 +264,117 @@ struct BrowserDownload {
     headers: Vec<(String, String)>,
 }
 
+/// Links from the browser waiting for a window to show them.
 #[derive(Default)]
-struct PendingFromBrowser(Mutex<Vec<BrowserDownload>>);
+struct PendingFromBrowser {
+    /// Playlists, for the main window's Playlist / Folder dialog.
+    playlists: Mutex<Vec<BrowserDownload>>,
+    /// Single downloads, each shown in its own "Download File Info" window.
+    singles: Mutex<std::collections::HashMap<u64, BrowserDownload>>,
+    next: std::sync::atomic::AtomicU64,
+}
 
-/// Hands the frontend the downloads that arrived from the browser.
+/// Hands the main window the playlists that arrived from the browser.
 #[tauri::command]
 fn take_browser_downloads(pending: State<PendingFromBrowser>) -> Vec<BrowserDownload> {
-    std::mem::take(&mut *pending.0.lock().unwrap())
+    std::mem::take(&mut *pending.playlists.lock().unwrap())
+}
+
+/// Hands a "Download File Info" window its link.
+#[tauri::command]
+fn take_browser_download(pending: State<PendingFromBrowser>, key: u64) -> Option<BrowserDownload> {
+    pending.singles.lock().unwrap().remove(&key)
+}
+
+/// Opens the small IDM-style "Download File Info" window for a link.
+fn open_add_window(app: &AppHandle, download: BrowserDownload) {
+    let pending = app.state::<PendingFromBrowser>();
+    let key = pending.next.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+    pending.singles.lock().unwrap().insert(key, download);
+    let built = tauri::WebviewWindowBuilder::new(
+        app,
+        format!("add-{key}"),
+        tauri::WebviewUrl::App(format!("add.html?key={key}").into()),
+    )
+    .title("Download File Info")
+    .inner_size(600.0, 330.0)
+    .min_inner_size(480.0, 300.0)
+    .always_on_top(true)
+    .maximizable(false)
+    .minimizable(false)
+    .center()
+    .focused(true)
+    .build();
+    if let Ok(window) = built {
+        let _ = window.set_focus();
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LinkInfo {
+    filename: String,
+    size: Option<u64>,
+    resumable: bool,
+}
+
+/// File name and size of a link, for the "Download File Info" window.
+#[tauri::command]
+async fn get_link_info(url: String, headers: Vec<(String, String)>) -> CmdResult<LinkInfo> {
+    let info = adm_engine::probe_link(&url, &headers).await.map_err(|e| e.to_string())?;
+    Ok(LinkInfo { filename: info.filename, size: info.size, resumable: info.resumable })
+}
+
+#[tauri::command]
+fn set_this_window_title(window: WebviewWindow, title: String) {
+    let _ = window.set_title(&title);
+}
+
+#[tauri::command]
+fn resize_this_window(window: WebviewWindow, width: f64, height: f64) {
+    let _ = window.set_size(tauri::LogicalSize::new(width, height));
+}
+
+/// Opens (or brings forward) the progress window of a download.
+#[tauri::command]
+fn open_progress_window(app: AppHandle, id: u64) {
+    show_progress_window(&app, id);
+}
+
+pub fn show_progress_window(app: &AppHandle, id: u64) {
+    let label = format!("progress-{id}");
+    if let Some(existing) = app.get_webview_window(&label) {
+        let _ = existing.unminimize();
+        let _ = existing.set_focus();
+        return;
+    }
+    let _ = tauri::WebviewWindowBuilder::new(app, label, tauri::WebviewUrl::App(format!("progress.html?id={id}").into()))
+        .title("Downloading")
+        .inner_size(560.0, 270.0)
+        .min_inner_size(460.0, 250.0)
+        .maximizable(false)
+        .center()
+        .focused(true)
+        .build();
+}
+
+/// Started a download from a small window: show its progress window if wanted.
+fn after_start(app: &AppHandle, id: u64) {
+    if app.state::<Manager>().settings().show_progress_window {
+        show_progress_window(app, id);
+    }
+}
+
+/// Adds a download and opens its progress window (main window's Add, and the
+/// "Download File Info" window).
+#[tauri::command]
+fn add_and_watch(app: AppHandle, manager: State<Manager>, request: AddRequest) -> CmdResult<u64> {
+    let start_now = !request.paused && !request.scheduled;
+    let id = manager.add(request).map_err(|e| e.to_string())?;
+    if start_now {
+        after_start(&app, id);
+    }
+    Ok(id)
 }
 
 /// Opens the folder with the browser extension, for "Load unpacked".
@@ -302,7 +409,7 @@ fn bring_to_front(window: &WebviewWindow) {
 }
 
 /// Answers a message from the browser extension.
-fn handle_browser_request(app: &AppHandle, req: bridge::Request) -> Value {
+async fn handle_browser_request(app: &AppHandle, req: bridge::Request) -> Value {
     let show = || {
         if let Some(window) = app.get_webview_window("main") {
             bring_to_front(&window);
@@ -314,34 +421,52 @@ fn handle_browser_request(app: &AppHandle, req: bridge::Request) -> Value {
             show();
             json!({ "ok": true })
         }
+        // The qualities a video offers, for the menu on the page.
+        "formats" => {
+            let tools = find_tools(&Settings::tools_dir());
+            match probe_media(&req.url, &req.headers(), &tools).await {
+                Ok(info) => json!({ "ok": true, "info": info }),
+                Err(e) => json!({ "ok": false, "error": e.to_string() }),
+            }
+        }
         "add" => {
             let manager = app.state::<Manager>();
             let filename = Some(req.filename.clone()).filter(|f| !f.is_empty());
-            let media = req.media || looks_like_media_page(&req.url);
-            if manager.settings().confirm_browser_downloads || req.playlist {
-                app.state::<PendingFromBrowser>().0.lock().unwrap().push(BrowserDownload {
-                    url: req.url.clone(),
-                    filename,
-                    media,
-                    playlist: req.playlist,
-                    title: req.title.clone(),
-                    referrer: req.referrer.clone(),
-                    headers: req.headers(),
-                });
+            let media = req.media || req.format.is_some() || looks_like_media_page(&req.url);
+            let download = BrowserDownload {
+                url: req.url.clone(),
+                filename,
+                media,
+                format: req.format,
+                playlist: req.playlist,
+                title: req.title.clone(),
+                referrer: req.referrer.clone(),
+                headers: req.headers(),
+            };
+            if req.playlist {
+                // Playlists need the big list: the main window's dialog.
+                app.state::<PendingFromBrowser>().playlists.lock().unwrap().push(download);
                 let _ = app.emit("browser-download", ());
                 show();
                 json!({ "ok": true })
+            } else if manager.settings().confirm_browser_downloads {
+                open_add_window(app, download);
+                json!({ "ok": true })
             } else {
                 let request = AddRequest {
-                    url: req.url.clone(),
-                    filename: filename.filter(|_| !media),
-                    headers: req.headers(),
+                    url: download.url,
+                    filename: download.filename.filter(|_| !media),
+                    headers: download.headers,
                     media,
-                    title: Some(req.title.clone()),
+                    format: download.format,
+                    title: Some(download.title),
                     ..Default::default()
                 };
                 match manager.add(request) {
-                    Ok(_) => json!({ "ok": true }),
+                    Ok(id) => {
+                        after_start(app, id);
+                        json!({ "ok": true })
+                    }
                     Err(e) => json!({ "ok": false, "error": e.to_string() }),
                 }
             }
@@ -432,7 +557,11 @@ fn main() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let app = handle.clone();
-                if let Err(e) = bridge::serve(move |req| handle_browser_request(&app, req)).await {
+                let serve = bridge::serve(move |req| {
+                    let app = app.clone();
+                    async move { handle_browser_request(&app, req).await }
+                });
+                if let Err(e) = serve.await {
                     eprintln!("browser bridge stopped: {e}");
                 }
             });
@@ -467,6 +596,12 @@ fn main() {
             power_action,
             get_entry,
             close_this_window,
+            take_browser_download,
+            open_progress_window,
+            add_and_watch,
+            get_link_info,
+            set_this_window_title,
+            resize_this_window,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start All Download Manager");

@@ -117,6 +117,45 @@ impl MediaJob {
 pub struct MediaTools {
     pub yt_dlp: Option<PathBuf>,
     pub ffmpeg: Option<PathBuf>,
+    /// JavaScript runtime yt-dlp needs for YouTube: ("deno" | "node" | "bun", path).
+    pub js_runtime: Option<(String, PathBuf)>,
+}
+
+impl MediaTools {
+    /// Tells yt-dlp which JavaScript runtime to use. yt-dlp only looks for
+    /// Deno by itself; Node.js and Bun must be named.
+    pub(crate) fn runtime_args(&self) -> Vec<String> {
+        match &self.js_runtime {
+            Some((name, path)) => vec!["--js-runtimes".into(), format!("{name}:{}", path.display())],
+            None => Vec::new(),
+        }
+    }
+}
+
+/// Turns yt-dlp's error into advice the user can act on.
+pub(crate) fn explain_error(error: &str, url: &str, tools: &MediaTools, warnings: &[String]) -> String {
+    let youtube = url.contains("youtube.com") || url.contains("youtu.be");
+    let mentions_runtime = warnings.iter().chain(std::iter::once(&error.to_string())).any(|w| {
+        let w = w.to_ascii_lowercase();
+        w.contains("javascript runtime") || w.contains("js runtime") || w.contains("challenge")
+    });
+    if youtube && tools.js_runtime.is_none() {
+        return format!(
+            "YouTube needs a JavaScript runtime. Install Deno in Settings → Video and audio, then click Resume. (yt-dlp: {error})"
+        );
+    }
+    if youtube && mentions_runtime {
+        return format!("Update yt-dlp in Settings, then click Resume. (yt-dlp: {error})");
+    }
+    if error.contains("not a bot") || error.contains("Sign in to confirm") {
+        return format!(
+            "YouTube asked to confirm you're not a bot. Update yt-dlp in Settings, or start the download from the browser while signed in to YouTube. (yt-dlp: {error})"
+        );
+    }
+    if error.contains("Requested format is not available") {
+        return format!("This quality isn't available for this video. Try another quality, or update yt-dlp in Settings. (yt-dlp: {error})");
+    }
+    error.to_string()
 }
 
 // Marker prefixes in yt-dlp's output, so our lines are easy to pick out.
@@ -271,6 +310,7 @@ pub async fn probe_media(url: &str, headers: &[(String, String)], tools: &MediaT
     let yt_dlp = tools.yt_dlp.as_ref().ok_or(Error::ToolMissing("yt-dlp"))?;
     let mut cmd = tokio::process::Command::new(yt_dlp);
     cmd.args(["--dump-single-json", "--no-playlist", "--flat-playlist", "--no-warnings", "--encoding", "utf-8"])
+        .args(tools.runtime_args())
         .args(header_args(headers))
         .arg("--")
         .arg(url)
@@ -285,7 +325,7 @@ pub async fn probe_media(url: &str, headers: &[(String, String)], tools: &MediaT
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
         let msg = err.lines().rev().find_map(|l| l.strip_prefix("ERROR: ")).unwrap_or("yt-dlp couldn't read this page");
-        return Err(Error::Tool(msg.to_string()));
+        return Err(Error::Tool(explain_error(msg, url, tools, &[])));
     }
     let json: serde_json::Value = serde_json::from_slice(&out.stdout).map_err(|e| Error::Tool(e.to_string()))?;
     media_info_from_json(&json, tools.ffmpeg.is_some())
@@ -459,7 +499,8 @@ where
     tokio::fs::create_dir_all(&job.dir).await?;
 
     let mut cmd = tokio::process::Command::new(yt_dlp);
-    cmd.args(yt_dlp_args(job, tools.ffmpeg.as_deref()))
+    cmd.args(tools.runtime_args())
+        .args(yt_dlp_args(job, tools.ffmpeg.as_deref()))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -472,12 +513,15 @@ where
     let errors = tokio::spawn(async move {
         let mut lines = BufReader::new(stderr).lines();
         let mut last_error = None;
+        let mut warnings = Vec::new();
         while let Ok(Some(line)) = lines.next_line().await {
             if let Some(msg) = line.strip_prefix("ERROR: ") {
                 last_error = Some(msg.to_string());
+            } else if let Some(msg) = line.strip_prefix("WARNING: ") {
+                warnings.push(msg.to_string());
             }
         }
-        last_error
+        (last_error, warnings)
     });
 
     let mut lines = BufReader::new(stdout).lines();
@@ -495,7 +539,7 @@ where
         let Some(line) = line else { break };
         if let Some(rest) = line.strip_prefix(PROGRESS) {
             if let Some((downloaded, total)) = tracker.update(rest) {
-                on_event(Event::Progress(Progress { downloaded, total, connections: 1 }));
+                on_event(Event::Progress(Progress { downloaded, total, connections: 1, parts: Vec::new() }));
             }
         } else if let Some(rest) = line.strip_prefix(INFO) {
             let (id, title) = rest.split_once(' ').unwrap_or((rest, ""));
@@ -509,9 +553,10 @@ where
     }
 
     let status = child.wait().await?;
-    let error = errors.await.ok().flatten();
+    let (error, warnings) = errors.await.unwrap_or_default();
     if !status.success() {
-        return Err(Error::Tool(error.unwrap_or_else(|| format!("yt-dlp stopped ({status})"))));
+        let error = error.unwrap_or_else(|| format!("yt-dlp stopped ({status})"));
+        return Err(Error::Tool(explain_error(&error, &job.url, tools, &warnings)));
     }
     file.ok_or_else(|| Error::Tool(error.unwrap_or_else(|| "yt-dlp didn't save a file".into())))
 }
@@ -695,6 +740,19 @@ mod tests {
         let mut t = ProgressTracker::default();
         assert_eq!(t.update("10 NA NA 0"), Some((10, None)));
         assert_eq!(t.update("20 NA 500.5 0"), Some((20, Some(500))));
+    }
+
+    #[test]
+    fn explains_youtube_failures() {
+        let yt = "https://www.youtube.com/watch?v=x";
+        let none = MediaTools::default();
+        assert!(explain_error("Requested format is not available", yt, &none, &[]).starts_with("YouTube needs a JavaScript runtime"));
+        let deno = MediaTools { js_runtime: Some(("deno".into(), PathBuf::from("/t/deno"))), ..Default::default() };
+        assert!(explain_error("Sign in to confirm you're not a bot", yt, &deno, &[]).contains("not a bot"));
+        assert!(explain_error("Requested format is not available", yt, &deno, &[]).contains("Try another quality"));
+        assert_eq!(explain_error("HTTP Error 404", "https://vimeo.com/1", &none, &[]), "HTTP Error 404");
+        assert_eq!(deno.runtime_args(), ["--js-runtimes", "deno:/t/deno"]);
+        assert!(none.runtime_args().is_empty());
     }
 
     #[tokio::test]

@@ -45,6 +45,9 @@ pub struct Settings {
     pub notify_on_finish: bool,
     /// IDM-style "Download complete" window with Open / Open folder buttons.
     pub show_complete_window: bool,
+    /// IDM-style progress window for each download started from the browser
+    /// or the Add dialog.
+    pub show_progress_window: bool,
 }
 
 impl Default for Settings {
@@ -68,6 +71,7 @@ impl Default for Settings {
             start_with_windows: false,
             notify_on_finish: true,
             show_complete_window: false,
+            show_progress_window: true,
         }
     }
 }

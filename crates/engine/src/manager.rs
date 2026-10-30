@@ -93,6 +93,9 @@ pub struct Entry {
     pub speed: f64,
     #[serde(skip_deserializing)]
     pub connections: usize,
+    /// While downloading: each segment as [start, end, downloaded].
+    #[serde(skip_deserializing, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<[u64; 3]>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -557,6 +560,7 @@ impl Manager {
                     entry.downloaded = p.downloaded;
                     entry.total = p.total;
                     entry.connections = p.connections;
+                    entry.parts = p.parts;
                     if let Some(r) = running.get_mut(&id) {
                         entry.speed = r.speed.update(p.downloaded);
                     }
@@ -590,6 +594,7 @@ impl Manager {
                     entry.speed = 0.0;
                     entry.connections = 0;
                     entry.stage = None;
+                    entry.parts.clear();
                     match result {
                         Ok(path) => {
                             entry.status = Status::Completed;
@@ -673,6 +678,7 @@ fn new_entry(id: u64, req: AddRequest, settings: &Settings) -> Entry {
         stage: None,
         speed: 0.0,
         connections: 0,
+        parts: Vec::new(),
     }
 }
 

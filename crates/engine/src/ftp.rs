@@ -105,14 +105,14 @@ where
         downloaded += n as u64;
         if last_report.elapsed() >= Duration::from_millis(250) {
             last_report = std::time::Instant::now();
-            on_event(Event::Progress(Progress { downloaded, total, connections: 1 }));
+            on_event(Event::Progress(Progress { downloaded, total, connections: 1, parts: Vec::new() }));
         }
     }
     file.flush().await?;
     drop(file);
     stream.finish().await.map_err(ftp_error)?;
     let _ = ftp.quit().await;
-    on_event(Event::Progress(Progress { downloaded, total, connections: 0 }));
+    on_event(Event::Progress(Progress { downloaded, total, connections: 0, parts: Vec::new() }));
 
     if let Some(expected) = total {
         if downloaded != expected {

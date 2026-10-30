@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Download File Info</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="small-window">
+  <form id="form" class="info-form">
+    <div class="info-grid">
+      <label for="url">URL</label>
+      <input id="url" type="text" spellcheck="false">
+
+      <label for="dir">Save to</label>
+      <div class="row">
+        <input id="dir" type="text" spellcheck="false">
+        <button type="button" class="btn" id="browse" title="Choose a folder">…</button>
+      </div>
+
+      <label for="name" id="name-label">File name</label>
+      <input id="name" type="text" spellcheck="false">
+
+      <label for="quality" id="quality-label" hidden>Quality</label>
+      <select id="quality" hidden></select>
+    </div>
+
+    <div class="info-side">
+      <span class="ext big" id="ext">file</span>
+      <span id="size" class="muted small"></span>
+    </div>
+
+    <p id="status" class="muted small info-status"></p>
+
+    <div class="actions">
+      <button type="button" class="btn" id="later" title="Add it to the scheduler (or paused) instead of starting now">Download Later</button>
+      <button type="submit" class="btn primary" id="start">Start Download</button>
+      <button type="button" class="btn" id="cancel">Cancel</button>
+    </div>
+  </form>
+  <script src="add.js"></script>
+</body>
+</html>

@@ -169,6 +169,10 @@ fn names(entries: &[&Entry]) -> String {
 
 /// IDM-style small window with Open / Open folder / Close.
 pub fn open_complete_window(app: &AppHandle, entry: &Entry) {
+    // Its progress window already turned into a "complete" window.
+    if app.get_webview_window(&format!("progress-{}", entry.id)).is_some() {
+        return;
+    }
     let label = format!("done-{}", entry.id);
     if let Some(existing) = app.get_webview_window(&label) {
         let _ = existing.set_focus();

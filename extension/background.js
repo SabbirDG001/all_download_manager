@@ -30,7 +30,7 @@ async function callApp(message) {
   return reply;
 }
 
-async function sendDownload({ url, referrer = "", filename = "", media = false, title = "", playlist = false }) {
+async function sendDownload({ url, referrer = "", filename = "", media = false, title = "", playlist = false, format = null }) {
   await callApp({
     action: "add",
     url,
@@ -39,6 +39,7 @@ async function sendDownload({ url, referrer = "", filename = "", media = false, 
     media,
     title,
     playlist,
+    format,
     cookies: await cookieHeader(url),
     userAgent: navigator.userAgent,
   });
@@ -211,11 +212,32 @@ async function pickVideo({ src, pageUrl }, tab) {
 
 // Messages from the popup and the page button.
 chrome.runtime.onMessage.addListener((msg, sender, respond) => {
+  if (msg?.type === "formats") {
+    // The qualities for the menu on the page (the app asks yt-dlp).
+    (async () => {
+      const reply = await callApp({
+        action: "formats",
+        url: msg.url,
+        referrer: sender.tab?.url || msg.url,
+        cookies: await cookieHeader(msg.url),
+        userAgent: navigator.userAgent,
+      });
+      return reply.info;
+    })()
+      .then((info) => respond({ ok: true, info }))
+      .catch((err) => respond({ ok: false, error: err.message }));
+    return true;
+  }
   if (msg?.type === "grab-video") {
     (async () => {
       const tab = sender.tab;
-      const choice = await pickVideo(msg, tab);
-      await sendDownload({ ...choice, title: msg.title || tab?.title || "", referrer: tab?.url || msg.pageUrl });
+      const choice = msg.format ? { url: msg.pageUrl, media: true } : await pickVideo(msg, tab);
+      await sendDownload({
+        ...choice,
+        format: msg.format || null,
+        title: msg.title || tab?.title || "",
+        referrer: tab?.url || msg.pageUrl,
+      });
     })()
       .then(() => respond({ ok: true }))
       .catch((err) => { setError(err.message); respond({ ok: false, error: err.message }); });

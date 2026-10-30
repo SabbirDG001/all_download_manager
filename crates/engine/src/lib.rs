@@ -22,7 +22,7 @@ mod tools;
 
 pub use category::Category;
 pub use collection::{list_collection, looks_like_collection, playlist_from_json, Collection, CollectionItem, CollectionKind};
-pub use download::{download, download_with_events, part_paths, DownloadOptions, Event, Progress};
+pub use download::{download, download_with_events, part_paths, probe_link, DownloadOptions, Event, Progress};
 pub use error::{Error, Result};
 pub use filename::sanitize_filename;
 pub use ftp::download_ftp;
@@ -38,4 +38,4 @@ pub use settings::Settings;
 pub use speed::SpeedMeter;
 pub use state::{split_into_segments, DownloadState, Segment};
 pub use tokio_util::sync::CancellationToken;
-pub use tools::{find_tools, install_ffmpeg, install_yt_dlp, tools_status, ToolInfo, ToolsStatus};
+pub use tools::{find_tools, install_deno, install_ffmpeg, install_yt_dlp, tools_status, ToolInfo, ToolsStatus};

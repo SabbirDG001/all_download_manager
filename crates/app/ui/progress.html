@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Downloading</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="small-window">
+  <div class="progress-window" id="root">
+    <div class="pw-url" id="url"></div>
+    <dl class="pw-facts">
+      <dt>Status</dt><dd id="status">Connecting…</dd>
+      <dt>File size</dt><dd id="size">—</dd>
+      <dt>Downloaded</dt><dd id="downloaded">—</dd>
+      <dt>Transfer rate</dt><dd id="rate">—</dd>
+      <dt>Time left</dt><dd id="eta">—</dd>
+      <dt>Resume capability</dt><dd id="resume">—</dd>
+    </dl>
+    <div class="pw-bar"><div id="bar"></div></div>
+
+    <div class="pw-buttons" id="running-buttons">
+      <button type="button" class="btn" id="details-toggle">Show details &gt;&gt;</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn" id="pause">Pause</button>
+      <button type="button" class="btn" id="cancel" title="Stop this download (it stays in the list)">Cancel</button>
+    </div>
+    <div class="pw-buttons" id="done-buttons" hidden>
+      <span class="spacer"></span>
+      <button type="button" class="btn" id="close">Close</button>
+      <button type="button" class="btn" id="folder">Open folder</button>
+      <button type="button" class="btn primary" id="open">Open</button>
+    </div>
+
+    <div class="pw-details" id="details" hidden>
+      <div class="pw-details-title">Start positions and download progress by connections</div>
+      <div class="pw-parts" id="parts"></div>
+      <div class="pw-table">
+        <table>
+          <thead><tr><th class="num">N.</th><th class="num">Downloaded</th><th>Info</th></tr></thead>
+          <tbody id="part-rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <script src="progress.js"></script>
+</body>
+</html>

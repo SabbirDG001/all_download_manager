@@ -39,6 +39,8 @@ pub struct Request {
     pub title: String,
     /// Download the whole playlist the page belongs to.
     pub playlist: bool,
+    /// Quality picked from the menu on the page.
+    pub format: Option<adm_engine::MediaFormat>,
     /// Added by the host; checked by the app.
     pub token: String,
 }
@@ -134,7 +136,8 @@ fn send_to_app(req: &Request) -> std::io::Result<Value> {
     let info: BridgeFile = serde_json::from_slice(&data).map_err(std::io::Error::other)?;
     let addr = SocketAddr::from(([127, 0, 0, 1], info.port));
     let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(2))?;
-    stream.set_read_timeout(Some(Duration::from_secs(10)))?;
+    let wait = if req.action == "formats" { 90 } else { 15 };
+    stream.set_read_timeout(Some(Duration::from_secs(wait)))?;
 
     let mut req = req.clone();
     req.token = info.token;
@@ -172,9 +175,10 @@ fn write_native_message(value: &Value) -> std::io::Result<()> {
 // ---------- App side ----------
 
 /// Listens for the host on a random local port. `handle` answers each request.
-pub async fn serve<F>(handle: F) -> std::io::Result<()>
+pub async fn serve<F, Fut>(handle: F) -> std::io::Result<()>
 where
-    F: Fn(Request) -> Value + Send + Sync + 'static,
+    F: Fn(Request) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = Value> + Send,
 {
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 
@@ -198,7 +202,7 @@ where
             let mut reader = tokio::io::BufReader::new(read.take(1024 * 1024));
             let reply = match reader.read_line(&mut line).await {
                 Ok(_) => match serde_json::from_str::<Request>(&line) {
-                    Ok(req) if req.token == token => handle(req),
+                    Ok(req) if req.token == token => handle(req).await,
                     Ok(_) => json!({ "ok": false, "error": "wrong token" }),
                     Err(e) => json!({ "ok": false, "error": e.to_string() }),
                 },

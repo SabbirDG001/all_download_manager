@@ -247,6 +247,7 @@
         <label class="check"><input id="set-autostart" type="checkbox"> Start with Windows (in the tray)</label>
         <label class="check"><input id="set-notify" type="checkbox"> Notify me when downloads finish</label>
         <label class="check"><input id="set-complete-window" type="checkbox"> Show the "Download complete" window</label>
+        <label class="check"><input id="set-progress-window" type="checkbox"> Show a progress window for each download</label>
       </div>
       <div class="tools-box">
         <div class="tools-head">
@@ -267,6 +268,10 @@
         </div>
         <div class="tool" data-tool="ffmpeg">
           <div><b>ffmpeg</b> <span class="muted small tool-state">Checking…</span></div>
+          <button type="button" class="btn tool-btn" hidden>Install</button>
+        </div>
+        <div class="tool" data-tool="deno">
+          <div><b>Deno</b> <span class="muted small tool-state">Checking…</span></div>
           <button type="button" class="btn tool-btn" hidden>Install</button>
         </div>
       </div>
@@ -427,7 +432,9 @@
     <button data-action="resume">Resume</button>
     <button data-action="pause">Pause</button>
     <button data-action="schedule">Add to the scheduler</button>
+    <button data-action="progress">Show progress window</button>
     <button data-action="copy">Copy link</button>
+    <button data-action="copy-error">Copy error</button>
     <hr>
     <button data-action="delete" class="danger-text">Delete…</button>
   </div>
