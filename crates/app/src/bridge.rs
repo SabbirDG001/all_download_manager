@@ -37,6 +37,8 @@ pub struct Request {
     pub media: bool,
     /// Page title, shown until the real name is known.
     pub title: String,
+    /// Download the whole playlist the page belongs to.
+    pub playlist: bool,
     /// Added by the host; checked by the app.
     pub token: String,
 }

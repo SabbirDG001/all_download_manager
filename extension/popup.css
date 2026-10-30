@@ -38,6 +38,8 @@ h1 { font-size: 14px; margin: 0; }
 }
 .btn:disabled { opacity: .5; cursor: default; }
 .btn.small { width: auto; height: 28px; padding: 0 12px; flex: none; }
+.btn.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+.card-buttons { display: flex; flex-direction: column; gap: 6px; flex: none; }
 .muted { color: var(--muted); }
 h2 { font-size: 12px; margin: 14px 0 6px; color: var(--muted); font-weight: 600; }
 .card {

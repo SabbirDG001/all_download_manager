@@ -11,6 +11,7 @@ use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
 
 use crate::download::{download_with_events, part_paths, DownloadOptions, Event};
+use crate::ftp::download_ftp;
 use crate::media::{delete_partial_media, download_media, MediaFormat, MediaJob};
 use crate::tools::find_tools;
 use crate::limit::RateLimiter;
@@ -114,6 +115,9 @@ pub struct AddRequest {
     pub title: Option<String>,
     /// Add it to the scheduler instead of starting it.
     pub scheduled: bool,
+    /// Folder below `dir` (or the download folder), "/"-separated: playlists
+    /// and folders keep their structure.
+    pub subfolder: Option<String>,
 }
 
 /// What the list's listeners are told.
@@ -234,51 +238,31 @@ impl Manager {
     }
 
     pub fn add(&self, req: AddRequest) -> crate::Result<u64> {
-        let url = req.url.trim().to_string();
-        let parsed = reqwest::Url::parse(&url).map_err(|_| Error::Settings(format!("not a valid link: {url}")))?;
-        if !matches!(parsed.scheme(), "http" | "https") {
-            return Err(Error::Settings("only http and https links are supported".into()));
+        Ok(self.add_many(vec![req])?[0])
+    }
+
+    /// Adds several downloads at once (a playlist or folder), saving the list once.
+    /// Nothing is added if any link is invalid.
+    pub fn add_many(&self, reqs: Vec<AddRequest>) -> crate::Result<Vec<u64>> {
+        for req in &reqs {
+            let url = req.url.trim();
+            let parsed = reqwest::Url::parse(url).map_err(|_| Error::Settings(format!("not a valid link: {url}")))?;
+            if !matches!(parsed.scheme(), "http" | "https" | "ftp") {
+                return Err(Error::Settings("only http, https and ftp links are supported".into()));
+            }
         }
-        let mut id = 0;
+        let mut ids = Vec::with_capacity(reqs.len());
         self.changed(|inner| {
-            id = inner.next_id;
-            inner.next_id += 1;
-            inner.entries.push(Entry {
-                id,
-                url,
-                filename: req.filename.filter(|f| !f.trim().is_empty()),
-                dir: req.dir.clone().unwrap_or_else(|| inner.settings.download_dir.clone()),
-                status: if req.scheduled {
-                    Status::Scheduled
-                } else if req.paused {
-                    Status::Paused
-                } else {
-                    Status::Queued
-                },
-                in_schedule: req.scheduled,
-                auto_dir: req.dir.is_none(),
-                downloaded: 0,
-                total: None,
-                resumable: false,
-                path: None,
-                error: None,
-                added_at: SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs()),
-                headers: req.headers,
-                kind: if req.media { Kind::Media } else { Kind::File },
-                quality: req.quality.unwrap_or(inner.settings.video_quality),
-                format: req.format,
-                format_label: req.media.then(|| {
-                    req.format.unwrap_or_else(|| req.quality.unwrap_or(inner.settings.video_quality).into()).label()
-                }),
-                title: req.title.filter(|t| !t.trim().is_empty()),
-                media_id: None,
-                stage: None,
-                speed: 0.0,
-                connections: 0,
-            });
+            for req in reqs {
+                let id = inner.next_id;
+                inner.next_id += 1;
+                ids.push(id);
+                let entry = new_entry(id, req, &inner.settings);
+                inner.entries.push(entry);
+            }
             self.schedule(inner);
         });
-        Ok(id)
+        Ok(ids)
     }
 
     pub fn pause(&self, ids: &[u64]) {
@@ -523,6 +507,12 @@ impl Manager {
                 let result = download_media(&job, &tools, move |ev| events.on_event(id, ev), cancel).await;
                 this.finish(id, result, &opts);
             });
+        } else if url.starts_with("ftp://") {
+            self.shared.runtime.spawn(async move {
+                let events = this.clone();
+                let result = download_ftp(&url, &opts, move |ev| events.on_event(id, ev), cancel).await;
+                this.finish(id, result, &opts);
+            });
         } else {
             self.shared.runtime.spawn(async move {
                 let events = this.clone();
@@ -627,6 +617,48 @@ impl Manager {
             }
             self.schedule(inner);
         });
+    }
+}
+
+fn new_entry(id: u64, req: AddRequest, settings: &Settings) -> Entry {
+    let mut dir = req.dir.clone().unwrap_or_else(|| settings.download_dir.clone());
+    // Playlists and folders keep their own folder structure.
+    if let Some(sub) = req.subfolder.as_deref() {
+        for part in sub.split(['/', '\\']).filter(|p| !p.trim().is_empty()) {
+            dir.push(crate::sanitize_filename(part));
+        }
+    }
+    let format = req.format.unwrap_or_else(|| req.quality.unwrap_or(settings.video_quality).into());
+    Entry {
+        id,
+        url: req.url.trim().to_string(),
+        filename: req.filename.filter(|f| !f.trim().is_empty()),
+        dir,
+        status: if req.scheduled {
+            Status::Scheduled
+        } else if req.paused {
+            Status::Paused
+        } else {
+            Status::Queued
+        },
+        in_schedule: req.scheduled,
+        auto_dir: req.dir.is_none() && req.subfolder.is_none(),
+        downloaded: 0,
+        total: None,
+        resumable: false,
+        path: None,
+        error: None,
+        added_at: SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs()),
+        headers: req.headers,
+        kind: if req.media { Kind::Media } else { Kind::File },
+        quality: req.quality.unwrap_or(settings.video_quality),
+        format: req.format,
+        format_label: req.media.then(|| format.label()),
+        title: req.title.filter(|t| !t.trim().is_empty()),
+        media_id: None,
+        stage: None,
+        speed: 0.0,
+        connections: 0,
     }
 }
 

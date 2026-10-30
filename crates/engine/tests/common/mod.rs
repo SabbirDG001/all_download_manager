@@ -105,6 +105,24 @@ pub fn temp_dir(name: &str) -> PathBuf {
 }
 
 
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 /// Serves the files in `dir` (no ranges), for tools such as yt-dlp.
 pub async fn serve_dir(dir: PathBuf) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -125,12 +143,17 @@ pub async fn serve_dir(dir: PathBuf) -> String {
                 }
                 let req = String::from_utf8_lossy(&req);
                 let path = req.split_whitespace().nth(1).unwrap_or("/").split('?').next().unwrap();
-                let file = dir.join(path.trim_start_matches('/'));
+                let path = percent_decode(path);
+                let mut file = dir.join(path.trim_start_matches('/'));
+                // Folders are served as their index.html, like a web server's listing.
+                if path.ends_with('/') {
+                    file = file.join("index.html");
+                }
                 let (status, body) = match std::fs::read(&file) {
                     Ok(body) if !path.contains("..") => ("200 OK", body),
                     _ => ("404 Not Found", Vec::new()),
                 };
-                let kind = if path.ends_with(".html") { "text/html" } else { "application/octet-stream" };
+                let kind = if file.extension().is_some_and(|e| e == "html") { "text/html" } else { "application/octet-stream" };
                 let head = format!(
                     "HTTP/1.1 {status}\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                     body.len()

@@ -214,16 +214,23 @@ where
         }
     }
 
+    let target = finish_file(&part, opts, &name).await?;
+    let _ = tokio::fs::remove_file(&meta).await;
+    Ok(target)
+}
+
+/// Moves a finished partial file to its place (in a type subfolder when
+/// sorting), without overwriting anything, and returns the final path.
+pub(crate) async fn finish_file(part: &Path, opts: &DownloadOptions, name: &str) -> Result<PathBuf> {
     let mut final_dir = opts.dir.clone();
     if opts.sort_into_folders {
-        if let Some(folder) = Category::of(&name).folder() {
+        if let Some(folder) = Category::of(name).folder() {
             final_dir.push(folder);
-            tokio::fs::create_dir_all(&final_dir).await?;
         }
     }
-    let target = unique_path(&final_dir, &name);
-    move_file(&part, &target).await?;
-    let _ = tokio::fs::remove_file(&meta).await;
+    tokio::fs::create_dir_all(&final_dir).await?;
+    let target = unique_path(&final_dir, name);
+    move_file(part, &target).await?;
     Ok(target)
 }
 

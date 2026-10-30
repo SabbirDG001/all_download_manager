@@ -223,7 +223,7 @@ fn format_args(format: MediaFormat, has_ffmpeg: bool) -> Vec<String> {
 }
 
 /// Browser headers as yt-dlp options.
-fn header_args(headers: &[(String, String)]) -> Vec<String> {
+pub(crate) fn header_args(headers: &[(String, String)]) -> Vec<String> {
     let mut args = Vec::new();
     for (name, value) in headers {
         let (flag, value) = match name.to_ascii_lowercase().as_str() {

@@ -7,8 +7,9 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use adm_engine::{
-    find_tools, install_ffmpeg, install_yt_dlp, looks_like_media_page, probe_media, tools_status, AddRequest,
-    CancellationToken, Entry, Manager, MediaInfo, Progress, Settings, ToolsStatus,
+    find_tools, install_ffmpeg, install_yt_dlp, list_collection, looks_like_collection, looks_like_media_page,
+    probe_media, tools_status, AddRequest, CancellationToken, Collection, Entry, Manager, MediaInfo, Progress,
+    Settings, ToolsStatus,
 };
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -26,6 +27,24 @@ fn list(manager: State<Manager>) -> Vec<Entry> {
 #[tauri::command]
 fn add(manager: State<Manager>, request: AddRequest) -> CmdResult<u64> {
     manager.add(request).map_err(|e| e.to_string())
+}
+
+/// Adds a whole playlist or folder at once.
+#[tauri::command]
+fn add_many(manager: State<Manager>, requests: Vec<AddRequest>) -> CmdResult<usize> {
+    manager.add_many(requests).map(|ids| ids.len()).map_err(|e| e.to_string())
+}
+
+/// Lists the videos of a playlist or channel, or the files of a folder (FTP or web).
+#[tauri::command]
+async fn get_collection(url: String, headers: Vec<(String, String)>) -> CmdResult<Collection> {
+    let tools = find_tools(&Settings::tools_dir());
+    list_collection(&url, &headers, &tools).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn is_collection(url: String) -> bool {
+    looks_like_collection(&url)
 }
 
 #[tauri::command]
@@ -201,6 +220,8 @@ struct BrowserDownload {
     url: String,
     filename: Option<String>,
     media: bool,
+    /// Open the playlist / folder dialog for this link.
+    playlist: bool,
     title: String,
     referrer: String,
     headers: Vec<(String, String)>,
@@ -263,11 +284,12 @@ fn handle_browser_request(app: &AppHandle, req: bridge::Request) -> Value {
             let manager = app.state::<Manager>();
             let filename = Some(req.filename.clone()).filter(|f| !f.is_empty());
             let media = req.media || looks_like_media_page(&req.url);
-            if manager.settings().confirm_browser_downloads {
+            if manager.settings().confirm_browser_downloads || req.playlist {
                 app.state::<PendingFromBrowser>().0.lock().unwrap().push(BrowserDownload {
                     url: req.url.clone(),
                     filename,
                     media,
+                    playlist: req.playlist,
                     title: req.title.clone(),
                     referrer: req.referrer.clone(),
                     headers: req.headers(),
@@ -357,6 +379,9 @@ fn main() {
             install_tool,
             looks_like_media,
             get_media_formats,
+            add_many,
+            get_collection,
+            is_collection,
             add_to_schedule,
             set_schedule_running,
             schedule_running,

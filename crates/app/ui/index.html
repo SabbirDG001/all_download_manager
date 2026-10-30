@@ -18,6 +18,7 @@
     <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v12M6 11l6 6 6-6M5 20h14"/></symbol>
     <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
     <symbol id="i-broom" viewBox="0 0 24 24"><path d="M4 20l7-7M14 4l6 6-6 6-6-6z"/></symbol>
+    <symbol id="i-stack" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/><path d="M18 15l3 3-3 3"/></symbol>
     <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
     <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4 18a9 9 0 1 1 16 0"/><path d="M12 14l4-5"/></symbol>
     <symbol id="i-video" viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/></symbol>
@@ -32,6 +33,9 @@
   <header class="toolbar">
     <button id="btn-add" class="btn primary" title="Add a download (Ctrl+N)">
       <svg class="icon"><use href="#i-plus"/></svg><span>Add URL</span>
+    </button>
+    <button id="btn-batch" class="btn" title="Download a whole playlist, channel or folder (YouTube, FTP, web folders)">
+      <svg class="icon"><use href="#i-stack"/></svg><span>Playlist / Folder</span>
     </button>
     <div class="sep"></div>
     <button id="btn-resume" class="btn" title="Resume selected">
@@ -163,6 +167,10 @@
           <div class="format-group"><h3>Audio only</h3><div id="formats-audio"></div></div>
         </div>
       </div>
+      <div id="add-collection-hint" class="collection-hint" hidden>
+        <span id="add-collection-text">This link is a playlist or folder.</span>
+        <button type="button" class="btn" id="add-open-batch">Download all…</button>
+      </div>
       <p id="add-tools-warning" class="warning small" hidden>yt-dlp isn't installed yet. Install it in <a href="#" id="add-open-settings">Settings</a>.</p>
       <label class="field inline-field">
         <span>When</span>
@@ -267,6 +275,88 @@
       <div class="actions">
         <button type="button" class="btn" data-close>Cancel</button>
         <button type="submit" class="btn primary" value="ok">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Playlist / folder -->
+  <dialog id="dlg-batch">
+    <form method="dialog" id="form-batch">
+      <h2>Download a playlist or folder</h2>
+      <div class="field">
+        <span>Link to a YouTube playlist or channel, an FTP folder, or a web folder</span>
+        <div class="row">
+          <input id="batch-url" type="text" spellcheck="false" placeholder="https://www.youtube.com/playlist?list=…   ftp://server/folder/   http://server/Movies/">
+          <button type="button" class="btn primary" id="batch-load">List</button>
+        </div>
+      </div>
+      <p id="batch-status" class="muted small" hidden></p>
+
+      <div id="batch-content" class="batch-content" hidden>
+        <div class="batch-head">
+          <div class="batch-title">
+            <span id="batch-kind" class="kind-badge"></span>
+            <b id="batch-title"></b>
+          </div>
+          <span id="batch-summary" class="muted small"></span>
+        </div>
+        <div class="batch-tools">
+          <label class="inline-check"><input type="checkbox" id="batch-all" checked> All</label>
+          <input id="batch-search" type="search" placeholder="Search names" spellcheck="false">
+          <select id="batch-type" aria-label="Show">
+            <option value="">All types</option>
+            <option value="video">Video</option>
+            <option value="music">Music</option>
+            <option value="documents">Documents</option>
+            <option value="compressed">Compressed</option>
+            <option value="programs">Programs</option>
+            <option value="images">Images</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div id="batch-list" class="batch-list"></div>
+
+        <div class="batch-options">
+          <label class="field">
+            <span>Save to</span>
+            <div class="row">
+              <input id="batch-dir" type="text" spellcheck="false">
+              <button type="button" class="btn" data-browse="batch-dir">Browse…</button>
+            </div>
+          </label>
+          <label class="check"><input id="batch-subfolder" type="checkbox" checked> <span id="batch-subfolder-label">Put them in a folder named after the playlist</span></label>
+          <div class="grid2">
+            <label class="field" id="batch-quality-field">
+              <span>Quality for every video</span>
+              <select id="batch-quality">
+                <option value="v:">Best</option>
+                <option value="v:2160">Up to 2160p (4K)</option>
+                <option value="v:1440">Up to 1440p</option>
+                <option value="v:1080">Up to 1080p</option>
+                <option value="v:720">Up to 720p</option>
+                <option value="v:480">Up to 480p</option>
+                <option value="v:360">Up to 360p</option>
+                <option value="a:mp3:320">Audio only · MP3 320 kbps</option>
+                <option value="a:mp3:192">Audio only · MP3 192 kbps</option>
+                <option value="a:mp3:128">Audio only · MP3 128 kbps</option>
+                <option value="a:m4a:">Audio only · M4A (original)</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>When</span>
+              <select id="batch-when">
+                <option value="now">Start now</option>
+                <option value="schedule">Add to the scheduler</option>
+                <option value="paused">Add paused</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="btn" data-close>Cancel</button>
+        <button type="submit" class="btn primary" id="batch-go" value="ok" disabled>Download</button>
       </div>
     </form>
   </dialog>

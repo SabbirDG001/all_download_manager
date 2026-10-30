@@ -357,6 +357,8 @@ async function openAdd(prefill = "", fromBrowser = null) {
   $("#add-quality").value = state.settings.video_quality || "best";
   mediaTouched = false;
   resetFormats();
+  $("#add-collection-hint").hidden = true;
+  checkCollectionLink();
   updateAddName();
   if (!fromBrowser) detectMedia();
   refreshToolsWarning();
@@ -375,10 +377,12 @@ async function takeBrowserDownloads() {
 function showNextBrowserDownload() {
   if (dialogOpen() || browserQueue.length === 0) return;
   const item = browserQueue.shift();
-  openAdd(item.url, item);
+  if (item.playlist) openBatch(item.url, item.headers);
+  else openAdd(item.url, item);
 }
 
 $("#dlg-add").addEventListener("close", () => setTimeout(showNextBrowserDownload, 0));
+$("#dlg-batch").addEventListener("close", () => setTimeout(showNextBrowserDownload, 0));
 
 function updateAddName() {
   const several = urlsFrom($("#add-urls").value).length > 1;
@@ -763,6 +767,199 @@ document.addEventListener("drop", (ev) => {
   const urls = urlsFrom(text.replace(/^#.*$/gm, ""));
   if (urls.length && !dialogOpen()) openAdd(urls.join("\n"));
 });
+
+// ---------- Playlists and folders ----------
+
+let batch = null; // { collection, checked: Set<index>, headers }
+
+function openBatch(url = "", headers = []) {
+  if (!state.settings) return loadSettings().then(() => openBatch(url, headers));
+  batch = null;
+  $("#batch-url").value = url;
+  $("#batch-dir").value = state.settings.download_dir;
+  $("#batch-content").hidden = true;
+  $("#batch-status").hidden = true;
+  $("#batch-go").disabled = true;
+  $("#batch-go").textContent = "Download";
+  $("#batch-when").value = "now";
+  const q = state.settings.video_quality;
+  $("#batch-quality").value = q === "audio" ? "a:mp3:320" : q === "best" ? "v:" : `v:${parseInt(q, 10)}`;
+  $("#dlg-batch").showModal();
+  batchHeaders = headers;
+  if (url) loadBatch(); else $("#batch-url").focus();
+}
+
+let batchHeaders = [];
+let batchRequest = 0;
+
+async function loadBatch() {
+  const url = $("#batch-url").value.trim();
+  if (!url) return;
+  const request = ++batchRequest;
+  $("#batch-load").disabled = true;
+  $("#batch-content").hidden = true;
+  $("#batch-go").disabled = true;
+  $("#batch-status").hidden = false;
+  $("#batch-status").textContent = url.startsWith("ftp://")
+    ? "Connecting to the FTP server and reading its folders…"
+    : "Reading the list… (large playlists and folders can take a little while)";
+  try {
+    const collection = await invoke("get_collection", { url, headers: batchHeaders });
+    if (request !== batchRequest) return;
+    batch = { collection, checked: new Set(collection.items.map((_, i) => i)) };
+    $("#batch-status").hidden = !collection.truncated;
+    $("#batch-status").textContent = collection.truncated
+      ? `Only the first ${collection.items.length} items are shown.`
+      : "";
+    renderBatch();
+  } catch (err) {
+    if (request !== batchRequest) return;
+    $("#batch-status").textContent = String(err);
+  } finally {
+    $("#batch-load").disabled = false;
+  }
+}
+
+function batchItemCategory(item) {
+  if (item.media) return "video";
+  return CATEGORY_OF_KIND[kindOf(extOf(item.name))];
+}
+
+function batchVisible() {
+  const q = $("#batch-search").value.trim().toLowerCase();
+  const type = $("#batch-type").value;
+  return batch.collection.items
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => (!q || `${item.folder}/${item.name}`.toLowerCase().includes(q)) && (!type || batchItemCategory(item) === type));
+}
+
+function renderBatch() {
+  const c = batch.collection;
+  const playlist = c.kind === "playlist";
+  $("#batch-content").hidden = false;
+  $("#batch-kind").textContent = playlist ? "Playlist" : "Folder";
+  $("#batch-kind").dataset.kind = c.kind;
+  $("#batch-title").textContent = c.title;
+  $("#batch-quality-field").hidden = !playlist;
+  $("#batch-subfolder-label").textContent = playlist
+    ? "Put them in a folder named after the playlist"
+    : "Keep the folder structure, inside a folder with the same name";
+
+  const list = $("#batch-list");
+  list.replaceChildren();
+  const visible = batchVisible();
+  for (const { item, index } of visible) {
+    const row = document.createElement("label");
+    row.className = "batch-item";
+    row.innerHTML = `<input type="checkbox"><span class="batch-num"></span><span class="batch-name"><span></span><span class="batch-folder"></span></span><span class="batch-meta"></span>`;
+    const box = row.querySelector("input");
+    box.checked = batch.checked.has(index);
+    box.addEventListener("change", () => {
+      box.checked ? batch.checked.add(index) : batch.checked.delete(index);
+      updateBatchSummary();
+    });
+    row.querySelector(".batch-num").textContent = index + 1;
+    row.querySelector(".batch-name span").textContent = item.name;
+    row.querySelector(".batch-folder").textContent = item.folder;
+    row.querySelector(".batch-folder").hidden = !item.folder;
+    row.querySelector(".batch-meta").textContent = item.duration
+      ? fmtDurationClock(item.duration)
+      : item.size != null ? fmtBytes(item.size) : "";
+    list.appendChild(row);
+  }
+  updateBatchSummary();
+}
+
+/** Ticked items among those shown: what gets downloaded. */
+function batchChosen() {
+  return batchVisible().filter(({ index }) => batch.checked.has(index));
+}
+
+function updateBatchSummary() {
+  const items = batch.collection.items;
+  const chosen = batchChosen().map(({ item }) => item);
+  const size = chosen.reduce((s, i) => s + (i.size || 0), 0);
+  const length = chosen.reduce((s, i) => s + (i.duration || 0), 0);
+  const shown = batchVisible().length;
+  const parts = [`${chosen.length} of ${shown === items.length ? items.length : `${shown} shown`} selected`];
+  if (size) parts.push(fmtBytes(size));
+  if (length) parts.push(fmtDuration(length));
+  $("#batch-summary").textContent = parts.join(" · ");
+  const visible = batchVisible();
+  const allVisibleChecked = visible.length > 0 && visible.every(({ index }) => batch.checked.has(index));
+  $("#batch-all").checked = allVisibleChecked;
+  $("#batch-all").indeterminate = !allVisibleChecked && visible.some(({ index }) => batch.checked.has(index));
+  $("#batch-go").disabled = chosen.length === 0;
+  $("#batch-go").textContent = chosen.length ? `Download ${chosen.length} item${chosen.length === 1 ? "" : "s"}` : "Download";
+}
+
+function batchFormat() {
+  const [kind, a, b] = $("#batch-quality").value.split(":");
+  if (kind === "v") return { type: "video", height: a ? Number(a) : null };
+  return { type: "audio", codec: a, kbps: b ? Number(b) : null };
+}
+
+$("#btn-batch").onclick = () => openBatch();
+$("#batch-load").onclick = () => loadBatch();
+$("#batch-url").addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); loadBatch(); } });
+$("#batch-search").addEventListener("input", () => batch && renderBatch());
+$("#batch-type").addEventListener("change", () => batch && renderBatch());
+$("#batch-all").addEventListener("change", (ev) => {
+  for (const { index } of batchVisible()) ev.target.checked ? batch.checked.add(index) : batch.checked.delete(index);
+  renderBatch();
+});
+
+$("#form-batch").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  if (!batch) return;
+  const c = batch.collection;
+  const when = $("#batch-when").value;
+  const dir = $("#batch-dir").value.trim() || null;
+  const own = $("#batch-subfolder").checked;
+  const format = batchFormat();
+  const requests = batchChosen().map(({ item }) => {
+    const parts = [own ? c.title : "", own ? item.folder : ""].filter(Boolean);
+    return {
+      url: item.url,
+      dir,
+      subfolder: parts.length ? parts.join("/") : null,
+      media: item.media,
+      format: item.media ? format : null,
+      title: item.name,
+      headers: batchHeaders,
+      paused: when === "paused",
+      scheduled: when === "schedule",
+    };
+  });
+  try {
+    const n = await call("add_many", { requests });
+    $("#dlg-batch").close();
+    toast(`${n} download${n === 1 ? "" : "s"} added`);
+  } catch { /* toast already shown */ }
+});
+
+// The Add dialog offers this dialog for playlist and folder links.
+let collectionTimer = null;
+function checkCollectionLink() {
+  clearTimeout(collectionTimer);
+  collectionTimer = setTimeout(async () => {
+    const urls = urlsFrom($("#add-urls").value);
+    const yes = urls.length === 1 && (await call("is_collection", { url: urls[0] }));
+    $("#add-collection-hint").hidden = !yes;
+    if (yes) {
+      $("#add-collection-text").textContent = /youtube|youtu\.be|vimeo|soundcloud/.test(urls[0])
+        ? "This link is a playlist or channel."
+        : "This link is a folder.";
+    }
+  }, 200);
+}
+$("#add-urls").addEventListener("input", checkCollectionLink);
+$("#add-open-batch").onclick = () => {
+  const url = urlsFrom($("#add-urls").value)[0];
+  const headers = addHeaders;
+  $("#dlg-add").close();
+  setTimeout(() => openBatch(url, headers), 0);
+};
 
 // ---------- Speed limit ----------
 

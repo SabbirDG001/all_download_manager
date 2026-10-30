@@ -5,9 +5,11 @@
 //! dropped connection, and re-splits slow segments when a connection frees up.
 
 mod category;
+mod collection;
 mod download;
 mod error;
 mod filename;
+mod ftp;
 mod limit;
 mod manager;
 mod media;
@@ -19,9 +21,11 @@ mod state;
 mod tools;
 
 pub use category::Category;
+pub use collection::{list_collection, looks_like_collection, playlist_from_json, Collection, CollectionItem, CollectionKind};
 pub use download::{download, download_with_events, part_paths, DownloadOptions, Event, Progress};
 pub use error::{Error, Result};
 pub use filename::sanitize_filename;
+pub use ftp::download_ftp;
 pub use manager::{AddRequest, Change, Entry, Kind, Manager, Status};
 pub use media::{
     download_media, looks_like_media_page, media_info_from_json, probe_media, yt_dlp_args, AudioCodec, FormatOption,

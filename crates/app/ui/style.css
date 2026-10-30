@@ -215,6 +215,38 @@ kbd {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
 }
+.collection-hint {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 10px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); font-weight: 600;
+}
+#dlg-batch { width: min(760px, calc(100vw - 32px)); }
+.batch-content { display: flex; flex-direction: column; gap: 10px; }
+.batch-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; }
+.batch-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.batch-title b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kind-badge {
+  flex: none; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  padding: 2px 7px; border-radius: 10px; color: #fff; background: #db2777;
+}
+.kind-badge[data-kind="folder"] { background: #ca8a04; }
+.batch-tools { display: flex; align-items: center; gap: 10px; }
+.batch-tools input[type="search"] {
+  flex: 1; min-width: 0; padding: 6px 9px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg);
+  font: inherit; color: inherit; user-select: text;
+}
+.batch-list {
+  height: clamp(110px, calc(100vh - 520px), 320px); overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+}
+.batch-item { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-top: 1px solid var(--border); cursor: pointer; }
+.batch-item:first-child { border-top: 0; }
+.batch-item:hover { background: var(--hover); }
+.batch-item input { margin: 0; flex: none; accent-color: var(--accent); }
+.batch-num { flex: none; width: 34px; text-align: right; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.batch-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.batch-name span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.batch-folder { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.batch-meta { flex: none; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.batch-options { display: flex; flex-direction: column; gap: 10px; }
 tr[data-status="scheduled"] .dot { background: var(--accent); opacity: .5; }
 
 /* Dialogs */

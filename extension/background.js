@@ -30,7 +30,7 @@ async function callApp(message) {
   return reply;
 }
 
-async function sendDownload({ url, referrer = "", filename = "", media = false, title = "" }) {
+async function sendDownload({ url, referrer = "", filename = "", media = false, title = "", playlist = false }) {
   await callApp({
     action: "add",
     url,
@@ -38,6 +38,7 @@ async function sendDownload({ url, referrer = "", filename = "", media = false, 
     filename,
     media,
     title,
+    playlist,
     cookies: await cookieHeader(url),
     userAgent: navigator.userAgent,
   });

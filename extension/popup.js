@@ -47,9 +47,16 @@ async function showMedia() {
   // Video sites: the page itself goes to yt-dlp.
   if (isMediaSite(tab.url)) {
     $("page-video").hidden = false;
+    $("page-video").querySelector("b").textContent = "On this page";
     $("page-title").textContent = tab.title || tab.url;
     $("page-download").onclick = (e) =>
       send({ url: tab.url, media: true, title: tab.title || "", referrer: tab.url }, e.currentTarget);
+    // Playlists and channels can be downloaded whole.
+    const u = new URL(tab.url);
+    const isList = u.searchParams.has("list") || /^\/(playlist|@|channel\/|c\/|user\/)/.test(u.pathname);
+    $("page-playlist").hidden = !isList;
+    $("page-playlist").onclick = (e) =>
+      send({ url: tab.url, media: true, playlist: true, title: tab.title || "", referrer: tab.url }, e.currentTarget);
   }
 
   const { list = [] } = (await chrome.runtime.sendMessage({ type: "media-list", tabId: tab.id })) || {};

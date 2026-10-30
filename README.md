@@ -44,6 +44,32 @@ The app uses Microsoft Edge WebView2, which Windows 10 and 11 already have.
 - Follows the Windows light or dark theme.
 - Keyboard: Ctrl+N add, Delete delete, Ctrl+A select all, Enter open, Esc deselect.
 
+## Playlists, channels and folders
+
+Click **Playlist / Folder** in the toolbar (or paste such a link into
+**Add URL** and click **Download all…**) and the app lists everything behind
+the link:
+
+- **YouTube playlists and channels** (and playlists on other video sites).
+  A channel's Videos, Shorts and Live tabs are each put in their own folder.
+  Needs yt-dlp.
+- **FTP servers:** `ftp://server/folder/`, including all subfolders. Add a
+  user name and password as `ftp://user:password@server/folder/`; without
+  them the app logs in anonymously. Interrupted FTP downloads continue where
+  they stopped.
+- **Web folders:** "Index of /" pages (Apache, nginx, IIS) and h5ai, as used by
+  many media and "FTP" servers, including all subfolders.
+- **Pages with several videos** on them.
+
+Tick the items you want (search by name or show one type, such as Video), pick
+the quality for every video (resolution or MP3/M4A), and click **Download**.
+Everything goes into a folder named after the playlist or folder, keeping its
+subfolders. They can also go to the scheduler or be added paused. Up to 5,000
+items are listed per link.
+
+In the browser, the extension's popup shows **Whole playlist** on YouTube
+playlist and channel pages.
+
 ## Speed limit, categories and scheduler
 
 - **Speed limit:** the **No limit / Limit** button in the toolbar turns it on
@@ -219,6 +245,8 @@ The tests run against a small local HTTP server and check segmented downloads,
 the single-connection fallback, not overwriting files, resuming after a pause,
 and the download list (queue limit, pause/resume, delete, surviving a restart,
 speed limit, sorting into folders, and the scheduler's time windows).
+Folder downloads are tested against a local web folder and, if Python's
+`pyftpdlib` is installed, a real FTP server (including resuming over FTP).
 If yt-dlp and ffmpeg are on `PATH`, a test also downloads a local HLS stream
 and extracts MP3 audio with them. `cargo test -- --ignored` additionally
 installs yt-dlp from GitHub.

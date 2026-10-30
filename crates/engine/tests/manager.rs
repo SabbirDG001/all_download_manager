@@ -130,7 +130,7 @@ async fn rejects_bad_links() {
     let dir = temp_dir("mgr-bad");
     let m = manager(&dir, 3);
     assert!(m.add(AddRequest { url: "not a link".into(), ..Default::default() }).is_err());
-    assert!(m.add(AddRequest { url: "ftp://x/y".into(), ..Default::default() }).is_err());
+    assert!(m.add(AddRequest { url: "file:///etc/passwd".into(), ..Default::default() }).is_err());
     assert!(m.entries().is_empty());
 }
 
