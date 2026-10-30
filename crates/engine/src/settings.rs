@@ -8,7 +8,7 @@ const FILE_NAME: &str = "settings.json";
 
 /// User settings, stored as JSON.
 ///
-/// The settings file lives in `%APPDATA%\AllDownloadManager\settings.json`,
+/// The settings file and the download list live in `%APPDATA%\AllDownloadManager`,
 /// unless a `settings.json` sits next to the program itself. That is
 /// "portable mode": everything stays in the folder you installed or unzipped
 /// the app to, which suits a USB stick or a non-system drive.
@@ -22,6 +22,8 @@ pub struct Settings {
     pub temp_dir: Option<PathBuf>,
     /// Parallel connections per download.
     pub connections: usize,
+    /// Downloads running at the same time; the rest wait in the queue.
+    pub max_active: usize,
     /// User-Agent header to send; the app's own name when unset.
     pub user_agent: Option<String>,
 }
@@ -31,22 +33,27 @@ impl Default for Settings {
         let download_dir = dirs::download_dir()
             .or_else(|| dirs::home_dir().map(|h| h.join("Downloads")))
             .unwrap_or_else(|| PathBuf::from("."));
-        Self { download_dir, temp_dir: None, connections: 8, user_agent: None }
+        Self { download_dir, temp_dir: None, connections: 8, max_active: 3, user_agent: None }
     }
 }
 
 impl Settings {
+    /// Folder for the settings file and the download list.
+    pub fn data_dir() -> PathBuf {
+        if let Some(dir) = portable_dir() {
+            return dir;
+        }
+        dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("AllDownloadManager")
+    }
+
+    /// Whether settings are kept next to the program (portable mode).
+    pub fn is_portable() -> bool {
+        portable_dir().is_some()
+    }
+
     /// Where the settings file is read from and written to.
     pub fn path() -> PathBuf {
-        if let Some(portable) = portable_path() {
-            if portable.exists() {
-                return portable;
-            }
-        }
-        dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("AllDownloadManager")
-            .join(FILE_NAME)
+        Self::data_dir().join(FILE_NAME)
     }
 
     /// Loads the settings, falling back to defaults when there is no file yet.
@@ -75,10 +82,17 @@ impl Settings {
         if !(1..=32).contains(&self.connections) {
             return Err(Error::Settings("connections must be between 1 and 32".into()));
         }
+        if !(1..=10).contains(&self.max_active) {
+            return Err(Error::Settings("downloads at once must be between 1 and 10".into()));
+        }
+        if self.download_dir.as_os_str().is_empty() {
+            return Err(Error::Settings("choose a download folder".into()));
+        }
         Ok(())
     }
 }
 
-fn portable_path() -> Option<PathBuf> {
-    Some(std::env::current_exe().ok()?.parent()?.join(FILE_NAME))
+fn portable_dir() -> Option<PathBuf> {
+    let dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    dir.join(FILE_NAME).exists().then_some(dir)
 }

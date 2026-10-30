@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Instant;
 
-use adm_engine::{download, CancellationToken, DownloadOptions, Error, Progress, Settings};
+use adm_engine::{download, CancellationToken, DownloadOptions, Error, Progress, Settings, SpeedMeter};
 use anyhow::{bail, Context};
 use clap::{Parser, Subcommand};
 
@@ -49,7 +49,7 @@ enum Command {
 enum ConfigAction {
     /// Print the current settings and where they are stored.
     Show,
-    /// Change a setting: download-dir, temp-dir, connections, user-agent.
+    /// Change a setting: download-dir, temp-dir, connections, max-active, user-agent.
     Set { key: String, value: String },
     /// Clear an optional setting: temp-dir, user-agent.
     Unset { key: String },
@@ -118,29 +118,6 @@ async fn get(url: &str, opts: DownloadOptions) -> anyhow::Result<()> {
     }
 }
 
-/// Smooths the speed over the last few seconds.
-#[derive(Default)]
-struct SpeedMeter {
-    samples: std::collections::VecDeque<(Instant, u64)>,
-}
-
-impl SpeedMeter {
-    fn update(&mut self, downloaded: u64) -> f64 {
-        let now = Instant::now();
-        self.samples.push_back((now, downloaded));
-        while self.samples.len() > 2 && now - self.samples[0].0 > std::time::Duration::from_secs(3) {
-            self.samples.pop_front();
-        }
-        let (t0, b0) = self.samples[0];
-        let secs = (now - t0).as_secs_f64();
-        if secs > 0.0 {
-            downloaded.saturating_sub(b0) as f64 / secs
-        } else {
-            0.0
-        }
-    }
-}
-
 fn print_progress(p: Progress, meter: &mut SpeedMeter) {
     let speed = meter.update(p.downloaded);
     let line = match p.total {
@@ -196,6 +173,7 @@ fn config(settings: &mut Settings, action: ConfigAction) -> anyhow::Result<()> {
             "download-dir" => settings.download_dir = PathBuf::from(value),
             "temp-dir" => settings.temp_dir = Some(PathBuf::from(value)),
             "connections" => settings.connections = value.parse().context("not a number")?,
+            "max-active" => settings.max_active = value.parse().context("not a number")?,
             "user-agent" => settings.user_agent = Some(value),
             _ => bail!("unknown setting '{key}'"),
         },

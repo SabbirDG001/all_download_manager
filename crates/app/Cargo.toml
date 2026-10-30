@@ -1,0 +1,18 @@
+[package]
+name = "all-download-manager"
+description = "All Download Manager desktop app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+adm-engine = { path = "../engine" }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["sync"] }

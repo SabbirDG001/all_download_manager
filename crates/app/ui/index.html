@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>All Download Manager</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v12M6 11l6 6 6-6M5 20h14"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-broom" viewBox="0 0 24 24"><path d="M4 20l7-7M14 4l6 6-6 6-6-6z"/></symbol>
+  </svg>
+
+  <header class="toolbar">
+    <button id="btn-add" class="btn primary" title="Add a download (Ctrl+N)">
+      <svg class="icon"><use href="#i-plus"/></svg><span>Add URL</span>
+    </button>
+    <div class="sep"></div>
+    <button id="btn-resume" class="btn" title="Resume selected">
+      <svg class="icon"><use href="#i-play"/></svg><span>Resume</span>
+    </button>
+    <button id="btn-pause" class="btn" title="Pause selected">
+      <svg class="icon"><use href="#i-pause"/></svg><span>Pause</span>
+    </button>
+    <button id="btn-delete" class="btn" title="Delete selected (Del)">
+      <svg class="icon"><use href="#i-trash"/></svg><span>Delete</span>
+    </button>
+    <div class="sep"></div>
+    <button id="btn-resume-all" class="btn" title="Resume everything">Resume all</button>
+    <button id="btn-pause-all" class="btn" title="Pause everything">Pause all</button>
+    <button id="btn-clear" class="btn" title="Remove finished downloads from the list (files stay)">
+      <svg class="icon"><use href="#i-broom"/></svg><span>Clear finished</span>
+    </button>
+    <div class="spacer"></div>
+    <button id="btn-settings" class="btn" title="Settings">
+      <svg class="icon"><use href="#i-gear"/></svg><span>Settings</span>
+    </button>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar" aria-label="Filter downloads">
+      <button class="filter active" data-filter="all">
+        <svg class="icon"><use href="#i-list"/></svg><span>All</span><span class="count" data-count="all"></span>
+      </button>
+      <button class="filter" data-filter="active">
+        <svg class="icon"><use href="#i-down"/></svg><span>Downloading</span><span class="count" data-count="active"></span>
+      </button>
+      <button class="filter" data-filter="unfinished">
+        <svg class="icon"><use href="#i-clock"/></svg><span>Unfinished</span><span class="count" data-count="unfinished"></span>
+      </button>
+      <button class="filter" data-filter="completed">
+        <svg class="icon"><use href="#i-check"/></svg><span>Finished</span><span class="count" data-count="completed"></span>
+      </button>
+    </nav>
+
+    <main class="list" id="list">
+      <table>
+        <colgroup>
+          <col class="c-name"><col class="c-size"><col class="c-progress">
+          <col class="c-speed"><col class="c-eta"><col class="c-status">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Name</th><th class="num">Size</th><th>Progress</th>
+            <th class="num">Speed</th><th class="num">Time left</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div id="empty" class="empty" hidden>
+        <svg class="empty-icon"><use href="#i-down"/></svg>
+        <p class="empty-title">No downloads here</p>
+        <p class="empty-hint">Click <b>Add URL</b>, paste a link with <kbd>Ctrl</kbd>+<kbd>V</kbd>, or drag a link into this window.</p>
+      </div>
+    </main>
+  </div>
+
+  <footer class="statusbar">
+    <span id="status-text"></span>
+    <span id="status-speed" class="status-speed"></span>
+  </footer>
+
+  <!-- Add downloads -->
+  <dialog id="dlg-add">
+    <form method="dialog" id="form-add">
+      <h2>Add download</h2>
+      <label class="field">
+        <span>Link (one per line for several)</span>
+        <textarea id="add-urls" rows="3" required spellcheck="false" placeholder="https://example.com/file.zip"></textarea>
+      </label>
+      <label class="field">
+        <span>Save to</span>
+        <div class="row">
+          <input id="add-dir" type="text" spellcheck="false">
+          <button type="button" class="btn" data-browse="add-dir">Browse…</button>
+        </div>
+      </label>
+      <label class="field" id="add-name-field">
+        <span>File name <small>(leave empty to use the server's name)</small></span>
+        <input id="add-name" type="text" spellcheck="false">
+      </label>
+      <label class="check"><input id="add-start" type="checkbox" checked> Start now</label>
+      <div class="actions">
+        <button type="button" class="btn" data-close>Cancel</button>
+        <button type="submit" class="btn primary" value="ok">Download</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Delete -->
+  <dialog id="dlg-delete">
+    <form method="dialog" id="form-delete">
+      <h2 id="delete-title">Delete download?</h2>
+      <p id="delete-text" class="muted"></p>
+      <label class="check"><input id="delete-files" type="checkbox"> Also delete the files from disk</label>
+      <div class="actions">
+        <button type="button" class="btn" data-close>Cancel</button>
+        <button type="submit" class="btn danger" value="ok">Delete</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Settings -->
+  <dialog id="dlg-settings">
+    <form method="dialog" id="form-settings">
+      <h2>Settings</h2>
+      <label class="field">
+        <span>Download folder</span>
+        <div class="row">
+          <input id="set-download-dir" type="text" required spellcheck="false">
+          <button type="button" class="btn" data-browse="set-download-dir">Browse…</button>
+        </div>
+      </label>
+      <label class="field">
+        <span>Temporary folder <small>(unfinished downloads; same drive as the download folder is fastest)</small></span>
+        <div class="row">
+          <input id="set-temp-dir" type="text" spellcheck="false" placeholder="Same as the download folder">
+          <button type="button" class="btn" data-browse="set-temp-dir">Browse…</button>
+          <button type="button" class="btn" id="set-temp-clear" title="Use the download folder">Clear</button>
+        </div>
+      </label>
+      <div class="grid2">
+        <label class="field">
+          <span>Connections per download</span>
+          <input id="set-connections" type="number" min="1" max="32" required>
+        </label>
+        <label class="field">
+          <span>Downloads at the same time</span>
+          <input id="set-max-active" type="number" min="1" max="10" required>
+        </label>
+      </div>
+      <label class="field">
+        <span>User agent <small>(optional)</small></span>
+        <input id="set-user-agent" type="text" spellcheck="false" placeholder="AllDownloadManager">
+      </label>
+      <p class="muted small" id="set-info"></p>
+      <div class="actions">
+        <button type="button" class="btn" data-close>Cancel</button>
+        <button type="submit" class="btn primary" value="ok">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="menu" class="menu" role="menu" hidden>
+    <button data-action="open">Open</button>
+    <button data-action="folder">Show in folder</button>
+    <hr>
+    <button data-action="resume">Resume</button>
+    <button data-action="pause">Pause</button>
+    <button data-action="copy">Copy link</button>
+    <hr>
+    <button data-action="delete" class="danger-text">Delete…</button>
+  </div>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

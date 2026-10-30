@@ -1,3 +1,4 @@
 /target
 *.admpart
 *.admpart.json
+/crates/app/gen

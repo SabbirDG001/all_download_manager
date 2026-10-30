@@ -8,10 +8,39 @@ Manager, with a browser extension for Chrome and Brave.
 | Step | Part | State |
 |---|---|---|
 | 1 | Download engine + command-line tool (`crates/engine`) | done |
-| 2 | Desktop app (Tauri) with download list, queue, settings, installer | next |
-| 3 | Chrome / Brave extension + Native Messaging bridge | planned |
+| 2 | Desktop app (`crates/app`, Tauri) with download list, queue, settings, installer | done |
+| 3 | Chrome / Brave extension + Native Messaging bridge | next |
 | 4 | Video and audio detection (yt-dlp + ffmpeg) | planned |
 | 5 | Scheduler, categories, speed limit | planned |
+
+## Getting the Windows app
+
+Every push builds the app on GitHub (see `.github/workflows/build.yml`).
+Open the repository's **Actions** tab, pick the latest **Build Windows app**
+run, and download one of:
+
+- **AllDownloadManager-setup**: the installer. It asks whether to install for
+  you or for everyone, and lets you choose the install folder.
+- **AllDownloadManager-portable**: no install. Unzip anywhere (another drive,
+  a USB stick) and run `AllDownloadManager.exe`. Settings and the download
+  list stay in that folder.
+
+The app uses Microsoft Edge WebView2, which Windows 10 and 11 already have.
+
+## The desktop app
+
+- Download list with progress, speed, time left and status, sorted newest first.
+- Filters: All, Downloading, Unfinished, Finished.
+- Queue: a set number of downloads run at once (3 by default), the rest wait.
+- Pause, resume, delete (optionally with the file), pause all, resume all,
+  clear finished. Paused downloads survive closing the app.
+- Add links with **Add URL**, by pressing Ctrl+V anywhere in the window, or by
+  dragging a link from the browser. Several links at once (one per line) work too.
+- Double-click a finished download to open it; right-click for more options.
+- Settings: download folder, temporary folder, connections per download,
+  downloads at the same time, user agent.
+- Follows the Windows light or dark theme.
+- Keyboard: Ctrl+N add, Delete delete, Ctrl+A select all, Enter open, Esc deselect.
 
 ## The engine
 
@@ -37,18 +66,31 @@ Manager, with a browser extension for Chrome and Brave.
   `adm config set temp-dir E:\Temp`. Use the same drive as the download folder
   for an instant move when finished.
 - **Settings file:** `%APPDATA%\AllDownloadManager\settings.json`.
-- **Portable mode:** put an empty-object `settings.json` (`{}`) next to
-  `adm.exe` and all settings are kept in that folder instead, so the app can
+- **Portable mode:** put an empty-object `settings.json` (`{}`) next to the program
+  (`AllDownloadManager.exe` or `adm.exe`) and settings and the download list are kept in that folder instead, so the app can
   live anywhere, such as a USB stick or `D:\Apps`.
-- **Install location:** the Windows installer (step 2) will let you choose the
-  install folder.
+- **Install location:** the installer lets you choose the install folder, or
+  use the portable version and put it wherever you like.
 
-## Build and use
+## Building it yourself
 
-You need [Rust](https://rustup.rs). On Windows, use the MSVC toolchain.
+You need [Rust](https://rustup.rs) (on Windows, the MSVC toolchain) and
+[Node.js](https://nodejs.org) (only for the Tauri build tool).
 
 ```
-cargo build --release
+cd crates/app
+npx @tauri-apps/cli@2 build
+```
+
+The installer ends up in `target\release\bundle\nsis\`. To run the app
+while working on it: `npx @tauri-apps/cli@2 dev`.
+
+## Command-line tool
+
+`adm` uses the same engine and settings as the app.
+
+```
+cargo build --release -p adm-engine
 ```
 
 The program is `target\release\adm.exe`.
@@ -70,4 +112,5 @@ cargo test
 ```
 
 The tests run against a small local HTTP server and check segmented downloads,
-the single-connection fallback, not overwriting files, and resuming after a pause.
+the single-connection fallback, not overwriting files, resuming after a pause,
+and the download list (queue limit, pause/resume, delete, surviving a restart).

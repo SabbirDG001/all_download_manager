@@ -56,6 +56,14 @@ impl Default for DownloadOptions {
     }
 }
 
+/// Something that happened during a download.
+#[derive(Debug, Clone)]
+pub enum Event {
+    /// The server answered; the file name and size are now known.
+    Started { filename: String, total: Option<u64>, resumable: bool },
+    Progress(Progress),
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Progress {
     pub downloaded: u64,
@@ -87,17 +95,43 @@ pub async fn download<F>(
 where
     F: Fn(Progress) + Send + Sync + 'static,
 {
+    let on_event = move |event| {
+        if let Event::Progress(p) = event {
+            on_progress(p)
+        }
+    };
+    download_with_events(url, opts, on_event, cancel).await
+}
+
+/// Like [`download`], but also reports when the download has started.
+pub async fn download_with_events<F>(
+    url: &str,
+    opts: &DownloadOptions,
+    on_event: F,
+    cancel: CancellationToken,
+) -> Result<PathBuf>
+where
+    F: Fn(Event) + Send + Sync + 'static,
+{
     let client = build_client(opts)?;
     let info = probe(&client, url).await?;
     let name = sanitize_filename(opts.filename.as_deref().unwrap_or(&info.filename));
 
     tokio::fs::create_dir_all(&opts.dir).await?;
-    let work_dir = opts.temp_dir.clone().unwrap_or_else(|| opts.dir.clone());
+    let work_dir = opts.work_dir().to_path_buf();
     tokio::fs::create_dir_all(&work_dir).await?;
-    let part = work_dir.join(format!("{name}.admpart"));
-    let meta = work_dir.join(format!("{name}.admpart.json"));
+    let (part, meta) = part_paths(&work_dir, &name);
 
-    let on_progress = Arc::new(on_progress);
+    on_event(Event::Started {
+        filename: name.clone(),
+        total: info.size,
+        resumable: info.resumable,
+    });
+    let on_event = Arc::new(on_event);
+    let on_progress = {
+        let on_event = on_event.clone();
+        Arc::new(move |p| on_event(Event::Progress(p)))
+    };
     let counters = Arc::new(Counters::default());
     let url = info.final_url.as_str();
 
@@ -172,6 +206,18 @@ where
     move_file(&part, &target).await?;
     let _ = tokio::fs::remove_file(&meta).await;
     Ok(target)
+}
+
+/// The partial file and its resume state for a download named `name`.
+pub fn part_paths(work_dir: &Path, name: &str) -> (PathBuf, PathBuf) {
+    (work_dir.join(format!("{name}.admpart")), work_dir.join(format!("{name}.admpart.json")))
+}
+
+impl DownloadOptions {
+    /// Folder holding the partial file while downloading.
+    pub fn work_dir(&self) -> &Path {
+        self.temp_dir.as_deref().unwrap_or(&self.dir)
+    }
 }
 
 fn build_client(opts: &DownloadOptions) -> Result<Client> {
