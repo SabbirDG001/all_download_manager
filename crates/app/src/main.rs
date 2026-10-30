@@ -279,17 +279,27 @@ fn looks_like_media(url: String) -> bool {
 
 /// Shows the folder picker; returns `None` when cancelled.
 #[tauri::command]
-async fn pick_folder(app: AppHandle, start: Option<String>) -> Option<String> {
+async fn pick_folder(app: AppHandle, window: WebviewWindow, start: Option<String>) -> Option<String> {
     let (tx, rx) = tokio::sync::oneshot::channel();
-    let mut dialog = app.dialog().file();
+    // Owned by the window that asked, so it opens in front of it, even of the
+    // "Download File Info" window, which stays on top of other windows.
+    let mut dialog = app.dialog().file().set_parent(&window);
     if let Some(start) = start.filter(|s| !s.is_empty()) {
         dialog = dialog.set_directory(start);
+    }
+    let was_on_top = window.is_always_on_top().unwrap_or(false);
+    if was_on_top {
+        let _ = window.set_always_on_top(false);
     }
     dialog.pick_folder(move |folder| {
         let _ = tx.send(folder);
     });
-    let folder = rx.await.ok().flatten()?;
-    folder.into_path().ok().map(|p| p.display().to_string())
+    let folder = rx.await.ok().flatten();
+    if was_on_top {
+        let _ = window.set_always_on_top(true);
+        let _ = window.set_focus();
+    }
+    folder?.into_path().ok().map(|p| p.display().to_string())
 }
 
 #[tauri::command]
