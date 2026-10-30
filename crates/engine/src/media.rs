@@ -28,13 +28,72 @@ pub enum Quality {
     Audio,
 }
 
+/// Audio file types the user can pick.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AudioCodec {
+    Mp3,
+    M4a,
+    Opus,
+    /// Whatever the site has, unconverted.
+    Original,
+}
+
+/// Exactly what to download from a video page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum MediaFormat {
+    /// Video with sound, at most `height` pixels tall (the best when unset).
+    Video { height: Option<u32> },
+    /// Sound only. `kbps` sets the MP3 bitrate (best variable bitrate when unset).
+    Audio { codec: AudioCodec, kbps: Option<u32> },
+}
+
+impl From<Quality> for MediaFormat {
+    fn from(q: Quality) -> Self {
+        match q {
+            Quality::Best => MediaFormat::Video { height: None },
+            Quality::P1080 => MediaFormat::Video { height: Some(1080) },
+            Quality::P720 => MediaFormat::Video { height: Some(720) },
+            Quality::P480 => MediaFormat::Video { height: Some(480) },
+            Quality::Audio => MediaFormat::Audio { codec: AudioCodec::Mp3, kbps: None },
+        }
+    }
+}
+
+impl MediaFormat {
+    /// Short name for the list, such as "1080p" or "MP3 320 kbps".
+    pub fn label(&self) -> String {
+        match self {
+            MediaFormat::Video { height: None } => "Best video".into(),
+            MediaFormat::Video { height: Some(h) } => format!("{h}p"),
+            MediaFormat::Audio { codec, kbps } => {
+                let name = match codec {
+                    AudioCodec::Mp3 => "MP3",
+                    AudioCodec::M4a => "M4A",
+                    AudioCodec::Opus => "Opus",
+                    AudioCodec::Original => "Audio",
+                };
+                match kbps {
+                    Some(k) if *codec == AudioCodec::Mp3 => format!("{name} {k} kbps"),
+                    _ => name.to_string(),
+                }
+            }
+        }
+    }
+
+    pub fn is_audio(&self) -> bool {
+        matches!(self, MediaFormat::Audio { .. })
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct MediaJob {
     /// Page or stream address.
     pub url: String,
     pub dir: PathBuf,
     pub temp_dir: Option<PathBuf>,
-    pub quality: Quality,
+    pub format: MediaFormat,
     pub headers: Vec<(String, String)>,
     /// Page title from the browser. Used to name bare streams (HLS/DASH
     /// playlists), which have no title of their own.
@@ -105,50 +164,239 @@ pub fn yt_dlp_args(job: &MediaJob, ffmpeg: Option<&Path>) -> Vec<String> {
         ),
     );
 
-    let has_ffmpeg = ffmpeg.is_some();
-    let mut extract_audio = false;
     if let Some(ffmpeg) = ffmpeg {
         push("--ffmpeg-location", ffmpeg.display().to_string());
     }
-    match (job.quality, has_ffmpeg) {
-        (Quality::Audio, true) => {
-            push("--format", "ba/b".into());
-            push("--audio-format", "mp3".into());
-            push("--audio-quality", "0".into());
-            extract_audio = true;
-        }
-        // Without ffmpeg nothing can be converted: take the audio as it comes.
-        (Quality::Audio, false) => push("--format", "ba/b".into()),
-        // Without ffmpeg separate video and audio can't be merged: one file only.
-        (_, false) => push("--format", "b".into()),
-        (quality, true) => {
-            push("--format", "bv*+ba/b".into());
-            push("--merge-output-format", "mp4/mkv".into());
-            let limit = match quality {
-                Quality::P1080 => Some(1080),
-                Quality::P720 => Some(720),
-                Quality::P480 => Some(480),
-                _ => None,
+    args.extend(format_args(job.format, ffmpeg.is_some()));
+    args.extend(header_args(&job.headers));
+    args.push("--".into());
+    args.push(job.url.clone());
+    args
+}
+
+/// yt-dlp options that pick (and convert to) the chosen format. Without
+/// ffmpeg nothing can be merged or converted, so a ready-made file is taken.
+fn format_args(format: MediaFormat, has_ffmpeg: bool) -> Vec<String> {
+    let pair = |a: &str, b: String| [a.to_string(), b];
+    match format {
+        MediaFormat::Video { height } => {
+            let pick = match (height, has_ffmpeg) {
+                (Some(h), true) => format!("bv*[height<={h}]+ba/b[height<={h}]/bv*+ba/b"),
+                (None, true) => "bv*+ba/b".into(),
+                (Some(h), false) => format!("b[height<={h}]/b"),
+                (None, false) => "b".into(),
             };
-            if let Some(height) = limit {
-                push("--format-sort", format!("res:{height}"));
+            let mut args = pair("--format", pick).to_vec();
+            if has_ffmpeg {
+                args.extend(pair("--merge-output-format", "mp4/mkv".into()));
+            }
+            args
+        }
+        MediaFormat::Audio { codec, kbps } => {
+            let pick = match codec {
+                AudioCodec::M4a => "ba[ext=m4a]/ba/b",
+                AudioCodec::Opus => "ba[acodec^=opus]/ba/b",
+                AudioCodec::Mp3 | AudioCodec::Original => "ba/b",
+            };
+            let mut args = pair("--format", pick.into()).to_vec();
+            if has_ffmpeg {
+                match codec {
+                    AudioCodec::Mp3 => {
+                        args.extend(pair("--audio-format", "mp3".into()));
+                        args.extend(pair("--audio-quality", kbps.map_or("0".into(), |k| format!("{k}K"))));
+                    }
+                    AudioCodec::M4a => args.extend(pair("--audio-format", "m4a".into())),
+                    AudioCodec::Opus => args.extend(pair("--audio-format", "opus".into())),
+                    AudioCodec::Original => {}
+                }
+                args.push("--extract-audio".into());
+            }
+            args
+        }
+    }
+}
+
+/// Browser headers as yt-dlp options.
+fn header_args(headers: &[(String, String)]) -> Vec<String> {
+    let mut args = Vec::new();
+    for (name, value) in headers {
+        let (flag, value) = match name.to_ascii_lowercase().as_str() {
+            "user-agent" => ("--user-agent", value.clone()),
+            "referer" => ("--referer", value.clone()),
+            _ => ("--add-header", format!("{name}:{value}")),
+        };
+        args.push(flag.to_string());
+        args.push(value);
+    }
+    args
+}
+
+// ---------- Listing the qualities a page offers ----------
+
+/// What a video page offers, for the quality picker.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaInfo {
+    pub title: String,
+    pub uploader: Option<String>,
+    /// Length in seconds.
+    pub duration: Option<f64>,
+    pub thumbnail: Option<String>,
+    pub video: Vec<FormatOption>,
+    pub audio: Vec<FormatOption>,
+    /// Whether HD choices are limited because ffmpeg is missing.
+    pub needs_ffmpeg: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FormatOption {
+    pub format: MediaFormat,
+    /// Such as "1080p60" or "MP3 320 kbps".
+    pub label: String,
+    /// Such as "Full HD" or "original".
+    pub detail: String,
+    /// Estimated size in bytes.
+    pub size: Option<u64>,
+}
+
+/// Asks yt-dlp which formats `url` has.
+pub async fn probe_media(url: &str, headers: &[(String, String)], tools: &MediaTools) -> Result<MediaInfo> {
+    let yt_dlp = tools.yt_dlp.as_ref().ok_or(Error::ToolMissing("yt-dlp"))?;
+    let mut cmd = tokio::process::Command::new(yt_dlp);
+    cmd.args(["--dump-single-json", "--no-playlist", "--flat-playlist", "--no-warnings", "--encoding", "utf-8"])
+        .args(header_args(headers))
+        .arg("--")
+        .arg(url)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    crate::tools::hide_console(&mut cmd);
+    let out = tokio::time::timeout(std::time::Duration::from_secs(60), cmd.output())
+        .await
+        .map_err(|_| Error::Tool("yt-dlp took too long to answer".into()))??;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr);
+        let msg = err.lines().rev().find_map(|l| l.strip_prefix("ERROR: ")).unwrap_or("yt-dlp couldn't read this page");
+        return Err(Error::Tool(msg.to_string()));
+    }
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).map_err(|e| Error::Tool(e.to_string()))?;
+    media_info_from_json(&json, tools.ffmpeg.is_some())
+}
+
+/// Turns yt-dlp's description of a page into quality choices.
+pub fn media_info_from_json(v: &serde_json::Value, has_ffmpeg: bool) -> Result<MediaInfo> {
+    if v["_type"] == "playlist" {
+        return Err(Error::Tool("This link is a playlist. Open one of its videos and use that link.".into()));
+    }
+    let duration = v["duration"].as_f64();
+    let formats: Vec<&serde_json::Value> = v["formats"].as_array().map(|a| a.iter().collect()).unwrap_or_default();
+    let has = |f: &serde_json::Value, key: &str| f[key].as_str().is_some_and(|c| c != "none");
+    let height = |f: &serde_json::Value| f["height"].as_u64().unwrap_or(0) as u32;
+    let size = |f: &serde_json::Value| -> Option<u64> {
+        f["filesize"].as_u64().or(f["filesize_approx"].as_u64()).or_else(|| {
+            let kbps = f["tbr"].as_f64()?;
+            Some((kbps * 1000.0 / 8.0 * duration?) as u64)
+        })
+    };
+    let rate = |f: &serde_json::Value, key: &str| f[key].as_f64().unwrap_or(0.0);
+
+    // Best audio-only track, preferring M4A (it merges into MP4 cleanly).
+    let audio_only: Vec<_> = formats.iter().copied().filter(|f| has(f, "acodec") && !has(f, "vcodec")).collect();
+    let best_audio = |pred: &dyn Fn(&serde_json::Value) -> bool| {
+        audio_only.iter().copied().filter(|f| pred(f)).max_by(|a, b| rate(a, "abr").total_cmp(&rate(b, "abr")))
+    };
+    let m4a = best_audio(&|f| f["ext"] == "m4a");
+    let opus = best_audio(&|f| f["acodec"].as_str().is_some_and(|c| c.starts_with("opus")));
+    let any_audio = best_audio(&|_| true);
+    let merge_audio_size = m4a.or(any_audio).and_then(size).unwrap_or(0);
+    // Streams often don't say what they carry: unknown counts as "may have sound".
+    let has_any_sound = formats.is_empty() || formats.iter().any(|f| f["acodec"] != "none");
+
+    // One choice per height: separate video tracks need ffmpeg to add sound.
+    let mut by_height: std::collections::BTreeMap<u32, (&serde_json::Value, bool)> = Default::default();
+    for f in formats.iter().copied().filter(|f| has(f, "vcodec") && height(f) > 0) {
+        let progressive = has(f, "acodec");
+        if !has_ffmpeg && !progressive {
+            continue;
+        }
+        let better = match by_height.get(&height(f)) {
+            None => true,
+            Some((cur, _)) => (rate(f, "fps"), rate(f, "tbr")) > (rate(cur, "fps"), rate(cur, "tbr")),
+        };
+        if better {
+            by_height.insert(height(f), (f, progressive));
+        }
+    }
+    let video = by_height
+        .iter()
+        .rev()
+        .map(|(&h, &(f, progressive))| {
+            let fps = rate(f, "fps").round() as u32;
+            let label = if fps > 30 { format!("{h}p{fps}") } else { format!("{h}p") };
+            let detail = match h {
+                h if h >= 2160 => "4K Ultra HD",
+                h if h >= 1440 => "2K Quad HD",
+                h if h >= 1080 => "Full HD",
+                h if h >= 720 => "HD",
+                _ => "",
+            };
+            let size = size(f).map(|s| if progressive { s } else { s + merge_audio_size });
+            FormatOption { format: MediaFormat::Video { height: Some(h) }, label, detail: detail.into(), size }
+        })
+        .collect::<Vec<_>>();
+
+    let mut audio = Vec::new();
+    if has_any_sound {
+        if has_ffmpeg {
+            for kbps in [320, 192, 128] {
+                audio.push(FormatOption {
+                    format: MediaFormat::Audio { codec: AudioCodec::Mp3, kbps: Some(kbps) },
+                    label: format!("MP3 {kbps} kbps"),
+                    detail: String::new(),
+                    size: duration.map(|d| (d * kbps as f64 * 1000.0 / 8.0) as u64),
+                });
+            }
+        }
+        let original = |f: &serde_json::Value, codec: AudioCodec, name: &str| {
+            let abr = rate(f, "abr").round() as u32;
+            FormatOption {
+                format: MediaFormat::Audio { codec, kbps: None },
+                label: if abr > 0 { format!("{name} {abr} kbps") } else { name.to_string() },
+                detail: "original".into(),
+                size: size(f),
+            }
+        };
+        if let Some(f) = m4a {
+            audio.push(original(f, AudioCodec::M4a, "M4A"));
+        }
+        if let Some(f) = opus.filter(|_| has_ffmpeg) {
+            audio.push(original(f, AudioCodec::Opus, "Opus"));
+        }
+        if m4a.is_none() && opus.is_none() {
+            if let Some(f) = any_audio {
+                audio.push(original(f, AudioCodec::Original, "Audio"));
             }
         }
     }
 
-    for (name, value) in &job.headers {
-        match name.to_ascii_lowercase().as_str() {
-            "user-agent" => push("--user-agent", value.clone()),
-            "referer" => push("--referer", value.clone()),
-            _ => push("--add-header", format!("{name}:{value}")),
-        }
-    }
-    if extract_audio {
-        args.push("--extract-audio".into());
-    }
-    args.push("--".into());
-    args.push(job.url.clone());
-    args
+    // Pages and streams without resolution details: just "the best there is".
+    let video = if video.is_empty() && formats.iter().all(|f| f["vcodec"] != "none") {
+        vec![FormatOption { format: MediaFormat::Video { height: None }, label: "Best".into(), detail: String::new(), size: v["filesize"].as_u64() }]
+    } else {
+        video
+    };
+
+    Ok(MediaInfo {
+        title: v["title"].as_str().unwrap_or("").to_string(),
+        uploader: v["uploader"].as_str().or(v["channel"].as_str()).map(str::to_string),
+        duration,
+        thumbnail: v["thumbnail"].as_str().filter(|t| t.starts_with("https://")).map(str::to_string),
+        video,
+        audio,
+        needs_ffmpeg: !has_ffmpeg,
+    })
 }
 
 /// Combines yt-dlp's per-file progress into one running total, because a
@@ -318,12 +566,12 @@ pub const MEDIA_SITES: &[&str] = &[
 mod tests {
     use super::*;
 
-    fn job(quality: Quality) -> MediaJob {
+    fn job(quality: impl Into<MediaFormat>) -> MediaJob {
         MediaJob {
             url: "https://www.youtube.com/watch?v=abc".into(),
             dir: PathBuf::from("/dl"),
             temp_dir: None,
-            quality,
+            format: quality.into(),
             headers: vec![("Cookie".into(), "a=b".into()), ("Referer".into(), "https://r/".into())],
             title_hint: Some("Page: 100% \"live\"".into()),
         }
@@ -347,19 +595,85 @@ mod tests {
     fn builds_arguments() {
         let ffmpeg = PathBuf::from("/tools/ffmpeg");
         let args = yt_dlp_args(&job(Quality::P720), Some(&ffmpeg));
-        assert_eq!(value_after(&args, "--format"), Some("bv*+ba/b"));
-        assert_eq!(value_after(&args, "--format-sort"), Some("res:720"));
+        assert_eq!(value_after(&args, "--format"), Some("bv*[height<=720]+ba/b[height<=720]/bv*+ba/b"));
+        assert_eq!(value_after(&args, "--merge-output-format"), Some("mp4/mkv"));
         assert_eq!(value_after(&args, "--referer"), Some("https://r/"));
         assert_eq!(value_after(&args, "--add-header"), Some("Cookie:a=b"));
         assert_eq!(args.last().unwrap(), "https://www.youtube.com/watch?v=abc");
 
         let audio = yt_dlp_args(&job(Quality::Audio), Some(&ffmpeg));
         assert!(audio.contains(&"--extract-audio".to_string()));
+        assert_eq!(value_after(&audio, "--audio-quality"), Some("0"));
+
+        let mp3 = yt_dlp_args(&job(MediaFormat::Audio { codec: AudioCodec::Mp3, kbps: Some(192) }), Some(&ffmpeg));
+        assert_eq!(value_after(&mp3, "--audio-quality"), Some("192K"));
+        let m4a = yt_dlp_args(&job(MediaFormat::Audio { codec: AudioCodec::M4a, kbps: None }), Some(&ffmpeg));
+        assert_eq!(value_after(&m4a, "--format"), Some("ba[ext=m4a]/ba/b"));
+        assert_eq!(value_after(&m4a, "--audio-format"), Some("m4a"));
+
+        let low = yt_dlp_args(&job(MediaFormat::Video { height: Some(360) }), None);
+        assert_eq!(value_after(&low, "--format"), Some("b[height<=360]/b"));
 
         // No ffmpeg: a single ready-made file, nothing to merge or convert.
         let plain = yt_dlp_args(&job(Quality::Best), None);
         assert_eq!(value_after(&plain, "--format"), Some("b"));
         assert!(!plain.contains(&"--extract-audio".to_string()));
+    }
+
+    /// Trimmed-down yt-dlp output for a YouTube-like page.
+    fn sample_page() -> serde_json::Value {
+        serde_json::json!({
+            "title": "Rust in 100 Seconds", "uploader": "Fireship", "duration": 150.0,
+            "thumbnail": "https://i.ytimg.com/vi/x/maxresdefault.jpg",
+            "formats": [
+                {"format_id": "139", "ext": "m4a", "acodec": "mp4a.40.5", "vcodec": "none", "abr": 48.8, "filesize": 900000},
+                {"format_id": "140", "ext": "m4a", "acodec": "mp4a.40.2", "vcodec": "none", "abr": 129.5, "filesize": 2400000},
+                {"format_id": "251", "ext": "webm", "acodec": "opus", "vcodec": "none", "abr": 135.2, "filesize": 2500000},
+                {"format_id": "18", "ext": "mp4", "acodec": "mp4a.40.2", "vcodec": "avc1", "height": 360, "fps": 30, "filesize": 9000000},
+                {"format_id": "134", "ext": "mp4", "acodec": "none", "vcodec": "avc1", "height": 360, "fps": 30, "filesize": 5000000},
+                {"format_id": "136", "ext": "mp4", "acodec": "none", "vcodec": "avc1", "height": 720, "fps": 30, "filesize": 20000000},
+                {"format_id": "299", "ext": "mp4", "acodec": "none", "vcodec": "avc1", "height": 1080, "fps": 60, "filesize_approx": 60000000},
+                {"format_id": "303", "ext": "webm", "acodec": "none", "vcodec": "vp9", "height": 1080, "fps": 30, "filesize": 50000000},
+                {"format_id": "313", "ext": "webm", "acodec": "none", "vcodec": "vp9", "height": 2160, "fps": 30, "tbr": 16000.0},
+                {"format_id": "sb0", "ext": "mhtml", "acodec": "none", "vcodec": "none"}
+            ]
+        })
+    }
+
+    #[test]
+    fn lists_qualities_like_idm() {
+        let info = media_info_from_json(&sample_page(), true).unwrap();
+        assert_eq!(info.title, "Rust in 100 Seconds");
+        let labels: Vec<_> = info.video.iter().map(|o| o.label.as_str()).collect();
+        assert_eq!(labels, ["2160p", "1080p60", "720p", "360p"]);
+        assert_eq!(info.video[0].detail, "4K Ultra HD");
+        // 4K size from bitrate (16000 kbps for 150 s) plus the M4A audio.
+        assert_eq!(info.video[0].size, Some(300_000_000 + 2_400_000));
+        // 1080p60 beats 1080p30, and its approximate size is used.
+        assert_eq!(info.video[1].size, Some(60_000_000 + 2_400_000));
+        // 360p exists as a file with sound and as video only; either way it has a size.
+        assert!(info.video[3].size.is_some());
+
+        let audio: Vec<_> = info.audio.iter().map(|o| o.label.as_str()).collect();
+        assert_eq!(audio, ["MP3 320 kbps", "MP3 192 kbps", "MP3 128 kbps", "M4A 130 kbps", "Opus 135 kbps"]);
+        assert_eq!(info.audio[0].size, Some(6_000_000));
+        assert_eq!(info.audio[3].format, MediaFormat::Audio { codec: AudioCodec::M4a, kbps: None });
+    }
+
+    #[test]
+    fn without_ffmpeg_only_ready_made_files() {
+        let info = media_info_from_json(&sample_page(), false).unwrap();
+        let labels: Vec<_> = info.video.iter().map(|o| o.label.as_str()).collect();
+        assert_eq!(labels, ["360p"]);
+        let audio: Vec<_> = info.audio.iter().map(|o| o.label.as_str()).collect();
+        assert_eq!(audio, ["M4A 130 kbps"]);
+        assert!(info.needs_ffmpeg);
+    }
+
+    #[test]
+    fn playlists_are_refused() {
+        let err = media_info_from_json(&serde_json::json!({"_type": "playlist"}), true).unwrap_err();
+        assert!(err.to_string().contains("playlist"));
     }
 
     #[test]

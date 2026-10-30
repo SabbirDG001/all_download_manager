@@ -7,8 +7,8 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use adm_engine::{
-    install_ffmpeg, install_yt_dlp, looks_like_media_page, tools_status, AddRequest, CancellationToken, Entry,
-    Manager, Progress, Settings, ToolsStatus,
+    find_tools, install_ffmpeg, install_yt_dlp, looks_like_media_page, probe_media, tools_status, AddRequest,
+    CancellationToken, Entry, Manager, MediaInfo, Progress, Settings, ToolsStatus,
 };
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -98,6 +98,13 @@ async fn install_tool(app: AppHandle, name: String) -> CmdResult<()> {
         other => return Err(format!("unknown tool '{other}'")),
     };
     result.map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// Lists the video and audio qualities a page offers.
+#[tauri::command]
+async fn get_media_formats(url: String, headers: Vec<(String, String)>) -> CmdResult<MediaInfo> {
+    let tools = find_tools(&Settings::tools_dir());
+    probe_media(&url, &headers, &tools).await.map_err(|e| e.to_string())
 }
 
 /// Whether a link should go to yt-dlp (video sites, stream playlists).
@@ -292,6 +299,7 @@ fn main() {
             get_tools_status,
             install_tool,
             looks_like_media,
+            get_media_formats,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start All Download Manager");

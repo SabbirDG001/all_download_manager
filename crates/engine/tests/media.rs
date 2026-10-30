@@ -7,7 +7,7 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
-use adm_engine::{find_tools, AddRequest, Entry, Manager, Quality, Settings, Status};
+use adm_engine::{find_tools, AddRequest, AudioCodec, Entry, Manager, MediaFormat, Settings, Status};
 use common::{serve_dir, temp_dir};
 use tokio::runtime::Handle;
 
@@ -56,6 +56,13 @@ async fn downloads_stream_and_extracts_audio() {
     let m = Manager::new(settings, out.join("list.json"), Handle::current(), |_| {});
     m.set_tools_dir(out.join("no-tools"));
 
+    // The quality picker's list for the stream.
+    let tools = find_tools(&out.join("no-tools"));
+    let info = adm_engine::probe_media(&format!("{base}/hls/stream.m3u8"), &[], &tools).await.unwrap();
+    // A simple stream has no resolution details: one "Best" choice, plus audio.
+    assert_eq!(info.video.first().map(|o| o.label.as_str()), Some("Best"), "{info:?}");
+    assert!(info.audio.iter().any(|o| o.label == "MP3 320 kbps"));
+
     // An HLS stream: yt-dlp fetches the pieces and ffmpeg joins them.
     let id = m
         .add(AddRequest { url: format!("{base}/hls/stream.m3u8"), media: true, ..Default::default() })
@@ -71,15 +78,23 @@ async fn downloads_stream_and_extracts_audio() {
         .add(AddRequest {
             url: format!("{base}/watch.html"),
             media: true,
-            quality: Some(Quality::Audio),
+            format: Some(MediaFormat::Audio { codec: AudioCodec::Mp3, kbps: Some(128) }),
             ..Default::default()
         })
         .unwrap();
     let e = wait_done(&m, id).await;
     assert_eq!(e.status, Status::Completed, "{:?}", e.error);
+    assert_eq!(e.format_label.as_deref(), Some("MP3 128 kbps"));
     let path = e.path.unwrap();
     assert_eq!(path.extension().unwrap(), "mp3");
-    assert!(path.exists());
+    // The chosen bitrate was used.
+    let probe = Command::new("ffprobe")
+        .args(["-v", "error", "-show_entries", "format=bit_rate", "-of", "default=nw=1:nk=1"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    let bitrate: u64 = String::from_utf8_lossy(&probe.stdout).trim().parse().unwrap();
+    assert!((120_000..=136_000).contains(&bitrate), "bitrate {bitrate}");
 }
 
 /// Installs the real yt-dlp from GitHub. Needs internet, so it only runs with

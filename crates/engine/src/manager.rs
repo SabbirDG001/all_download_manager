@@ -11,7 +11,7 @@ use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
 
 use crate::download::{download_with_events, part_paths, DownloadOptions, Event};
-use crate::media::{delete_partial_media, download_media, MediaJob};
+use crate::media::{delete_partial_media, download_media, MediaFormat, MediaJob};
 use crate::tools::find_tools;
 use crate::{Error, Quality, Settings, SpeedMeter};
 
@@ -61,9 +61,15 @@ pub struct Entry {
     pub headers: Vec<(String, String)>,
     #[serde(default)]
     pub kind: Kind,
-    /// Video/audio downloads: chosen quality.
+    /// Video/audio downloads: chosen quality (older lists only have this).
     #[serde(default)]
     pub quality: Quality,
+    /// Video/audio downloads: the exact choice from the quality picker.
+    #[serde(default)]
+    pub format: Option<MediaFormat>,
+    /// Short name of the choice, such as "1080p" or "MP3 320 kbps".
+    #[serde(default)]
+    pub format_label: Option<String>,
     /// Video/audio downloads: the media's title and id, once known.
     #[serde(default)]
     pub title: Option<String>,
@@ -93,6 +99,8 @@ pub struct AddRequest {
     pub media: bool,
     /// Video/audio quality; the default from settings when unset.
     pub quality: Option<Quality>,
+    /// Exact choice from the quality picker; overrides `quality`.
+    pub format: Option<MediaFormat>,
     /// Title of the page the link came from, shown until the real one is known.
     pub title: Option<String>,
 }
@@ -226,6 +234,10 @@ impl Manager {
                 headers: req.headers,
                 kind: if req.media { Kind::Media } else { Kind::File },
                 quality: req.quality.unwrap_or(inner.settings.video_quality),
+                format: req.format,
+                format_label: req.media.then(|| {
+                    req.format.unwrap_or_else(|| req.quality.unwrap_or(inner.settings.video_quality).into()).label()
+                }),
                 title: req.title.filter(|t| !t.trim().is_empty()),
                 media_id: None,
                 stage: None,
@@ -375,7 +387,7 @@ impl Manager {
                 url,
                 dir: opts.dir.clone(),
                 temp_dir: opts.temp_dir.clone(),
-                quality: entry.quality,
+                format: entry.format.unwrap_or_else(|| entry.quality.into()),
                 headers: opts.headers.clone(),
                 title_hint: entry.title.clone(),
             };

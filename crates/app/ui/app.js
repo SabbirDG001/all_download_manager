@@ -103,7 +103,7 @@ function createRow(e) {
   const tr = document.createElement("tr");
   tr.dataset.id = e.id;
   tr.innerHTML = `
-    <td><div class="name"><span class="ext"></span><span class="name-text"></span></div></td>
+    <td><div class="name"><span class="ext"></span><span class="name-text"></span><span class="format-tag" hidden></span></div></td>
     <td class="num size"></td>
     <td><div class="progress"><div class="bar"><div></div></div><span class="pct"></span></div></td>
     <td class="num speed"></td>
@@ -115,7 +115,7 @@ function createRow(e) {
 function updateRow(tr, e) {
   const name = displayName(e);
   let ext = extOf(name);
-  if (!ext && e.kind === "media") ext = e.quality === "audio" ? "mp3" : "mp4";
+  if (!ext && e.kind === "media") ext = e.format?.type === "audio" || e.quality === "audio" ? "mp3" : "mp4";
   tr.dataset.status = e.status;
   tr.classList.toggle("selected", state.selected.has(e.id));
   tr.title = e.error ? `${e.url}\n\n${e.error}` : e.url;
@@ -124,6 +124,9 @@ function updateRow(tr, e) {
   badge.textContent = ext.slice(0, 4) || "file";
   badge.dataset.kind = kindOf(ext);
   tr.querySelector(".name-text").textContent = name;
+  const tag = tr.querySelector(".format-tag");
+  tag.textContent = e.kind === "media" && e.formatLabel && e.status !== "completed" ? e.formatLabel : "";
+  tag.hidden = !tag.textContent;
 
   tr.querySelector(".size").textContent = e.total != null ? fmtBytes(e.total) : e.downloaded ? fmtBytes(e.downloaded) : "—";
 
@@ -336,6 +339,7 @@ async function openAdd(prefill = "", fromBrowser = null) {
   $("#add-media").checked = !!fromBrowser?.media;
   $("#add-quality").value = state.settings.video_quality || "best";
   mediaTouched = false;
+  resetFormats();
   updateAddName();
   if (!fromBrowser) detectMedia();
   refreshToolsWarning();
@@ -367,6 +371,117 @@ function updateAddName() {
   $("#add-name-field").hidden = media;
   $("#add-quality").disabled = !media;
   refreshToolsWarning();
+  scheduleFormats();
+}
+
+// ---------- Quality picker (video pages) ----------
+
+let formatsFor = null; // the link the picker shows
+let formatsRequest = 0;
+let formatsTimer = null;
+let chosenFormat = null;
+
+function resetFormats() {
+  formatsFor = null;
+  chosenFormat = null;
+  formatsRequest++;
+  $("#formats").hidden = true;
+  $("#add-quality").hidden = false;
+}
+
+function scheduleFormats() {
+  clearTimeout(formatsTimer);
+  formatsTimer = setTimeout(loadFormats, 400);
+}
+
+function fmtDurationClock(secs) {
+  if (!secs) return "";
+  secs = Math.round(secs);
+  const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
+  const mm = h ? String(m).padStart(2, "0") : m;
+  return `${h ? `${h}:` : ""}${mm}:${String(s).padStart(2, "0")}`;
+}
+
+async function loadFormats() {
+  const urls = urlsFrom($("#add-urls").value);
+  const media = $("#add-media").checked;
+  if (!media || urls.length !== 1) { resetFormats(); return; }
+  if (formatsFor === urls[0]) return;
+  if (!toolsStatus) toolsStatus = await call("get_tools_status");
+  if (!toolsStatus.ytDlp) { resetFormats(); return; }
+
+  formatsFor = urls[0];
+  chosenFormat = null;
+  const request = ++formatsRequest;
+  $("#formats").hidden = false;
+  $("#formats-lists").hidden = true;
+  $("#formats-thumb").hidden = true;
+  $("#formats-title").textContent = "";
+  $("#formats-sub").textContent = "";
+  document.querySelector(".formats-head").hidden = true;
+  $("#formats-status").textContent = "Checking which qualities are available…";
+  $("#formats-status").hidden = false;
+
+  let info;
+  try {
+    info = await invoke("get_media_formats", { url: urls[0], headers: addHeaders });
+  } catch (err) {
+    if (request !== formatsRequest) return;
+    $("#formats-status").textContent = `Couldn't list the qualities (${err}). The quality below will be used.`;
+    return;
+  }
+  if (request !== formatsRequest) return;
+
+  // Bare streams are called "stream"; the page's own title is better.
+  const bareStream = /\.(m3u8|mpd)(\?|$)/i.test(urls[0]);
+  const title = bareStream && addTitle ? addTitle : info.title;
+  $("#formats-title").textContent = title;
+  document.querySelector(".formats-head").hidden = !title;
+  $("#formats-sub").textContent = [info.uploader, fmtDurationClock(info.duration)].filter(Boolean).join(" · ");
+  if (info.thumbnail) { $("#formats-thumb").src = info.thumbnail; $("#formats-thumb").hidden = false; }
+  $("#formats-status").textContent = info.needsFfmpeg
+    ? "Install ffmpeg in Settings for HD video and MP3."
+    : "";
+  $("#formats-status").hidden = !info.needsFfmpeg;
+  renderFormatGroup($("#formats-video"), info.video);
+  renderFormatGroup($("#formats-audio"), info.audio);
+  $("#formats-lists").hidden = false;
+  $("#add-quality").hidden = true;
+  selectDefaultFormat(info);
+}
+
+function renderFormatGroup(el, options) {
+  el.replaceChildren();
+  for (const opt of options) {
+    const row = document.createElement("label");
+    row.className = "format";
+    row.innerHTML = `<input type="radio" name="format"><span class="format-label"></span><span class="format-detail"></span><span class="format-size"></span>`;
+    row.querySelector(".format-label").textContent = opt.label;
+    row.querySelector(".format-detail").textContent = opt.detail;
+    row.querySelector(".format-size").textContent = opt.size ? `~${fmtBytes(opt.size)}` : "";
+    const input = row.querySelector("input");
+    input.addEventListener("change", () => { chosenFormat = opt.format; });
+    row._option = opt;
+    el.appendChild(row);
+  }
+}
+
+/** Picks the row matching the default quality from Settings. */
+function selectDefaultFormat(info) {
+  const quality = $("#add-quality").value;
+  const rows = [...$$("#formats .format")];
+  let pick;
+  if (quality === "audio") {
+    pick = rows.find((r) => r._option.format.type === "audio");
+  } else {
+    const limit = { "1080p": 1080, "720p": 720, "480p": 480 }[quality] || Infinity;
+    pick = rows.find((r) => r._option.format.type === "video" && (r._option.format.height ?? 0) <= limit);
+  }
+  pick = pick || rows[0];
+  if (pick) {
+    pick.querySelector("input").checked = true;
+    chosenFormat = pick._option.format;
+  }
 }
 
 // Ticks "Video or audio page" for YouTube-like links, until the user decides.
@@ -383,6 +498,7 @@ function detectMedia() {
 }
 
 $("#add-urls").addEventListener("input", () => { updateAddName(); detectMedia(); });
+$("#add-quality").addEventListener("change", () => { if (formatsFor) selectDefaultFormat(); });
 $("#add-media").addEventListener("change", () => { mediaTouched = true; updateAddName(); });
 
 let toolsStatus = null;
@@ -411,6 +527,7 @@ $("#form-add").addEventListener("submit", async (ev) => {
       await call("add", {
         request: {
           url, dir, paused, media, quality, headers: addHeaders, title: addTitle,
+          format: media && urls.length === 1 && formatsFor === url ? chosenFormat : null,
           filename: urls.length === 1 && !media ? filename : null,
         },
       });

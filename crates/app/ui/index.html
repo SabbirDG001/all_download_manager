@@ -119,6 +119,20 @@
           <option value="audio">Audio only (MP3)</option>
         </select>
       </div>
+      <div id="formats" class="formats" hidden>
+        <div class="formats-head">
+          <img id="formats-thumb" alt="" hidden>
+          <div class="formats-meta">
+            <b id="formats-title"></b>
+            <span id="formats-sub" class="muted small"></span>
+          </div>
+        </div>
+        <p id="formats-status" class="muted small"></p>
+        <div id="formats-lists" class="formats-lists" hidden>
+          <div class="format-group"><h3>Video</h3><div id="formats-video"></div></div>
+          <div class="format-group"><h3>Audio only</h3><div id="formats-audio"></div></div>
+        </div>
+      </div>
       <p id="add-tools-warning" class="warning small" hidden>yt-dlp isn't installed yet. Install it in <a href="#" id="add-open-settings">Settings</a>.</p>
       <label class="check"><input id="add-start" type="checkbox" checked> Start now</label>
       <div class="actions">

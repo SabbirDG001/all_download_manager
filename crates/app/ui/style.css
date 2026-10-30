@@ -133,6 +133,10 @@ td {
 
 .name { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .name-text { overflow: hidden; text-overflow: ellipsis; }
+.format-tag {
+  flex: none; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 10px;
+  color: var(--accent); background: var(--accent-soft);
+}
 .ext {
   flex: none; width: 34px; height: 20px; border-radius: 4px;
   display: grid; place-items: center;
@@ -224,6 +228,29 @@ select {
 }
 .warning { color: var(--warn); margin: -6px 0 0; }
 .warning a { color: inherit; }
+.formats {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+}
+.formats-head { display: flex; gap: 10px; align-items: center; min-width: 0; }
+.formats-head img { width: 96px; height: 54px; object-fit: cover; border-radius: 4px; flex: none; background: var(--surface-2); }
+.formats-meta { display: flex; flex-direction: column; min-width: 0; }
+.formats-meta b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.formats-lists { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.format-group h3 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.format-group > div { display: flex; flex-direction: column; gap: 2px; max-height: 168px; overflow: auto; }
+.format-group:has(> div:empty) { display: none; }
+.format {
+  display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; cursor: pointer;
+  border: 1px solid transparent;
+}
+.format:hover { background: var(--hover); }
+.format:has(input:checked) { background: var(--accent-soft); border-color: var(--accent); }
+.format input { margin: 0; accent-color: var(--accent); }
+.format-label { font-weight: 600; white-space: nowrap; }
+#dlg-add { width: min(680px, calc(100vw - 32px)); }
+.format-detail { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.format-size { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tools-box {
   display: flex; flex-direction: column; gap: 8px;
   padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg);

@@ -63,8 +63,16 @@ To download a video:
 
 - Paste the page's link into **Add URL**. Links from known video sites (and
   `.m3u8`/`.mpd` streams) are ticked as **Video or audio page** automatically.
-- Choose the quality: Best, up to 1080p/720p/480p, or **Audio only (MP3)**.
-  The default is in Settings.
+- Pick the quality from the list, like in IDM. The app asks the site which
+  versions it has and shows each with its estimated size:
+  - **Video:** every resolution offered, such as 2160p (4K), 1440p,
+    1080p60, 720p … 144p.
+  - **Audio only:** MP3 at 320, 192 or 128 kbps, or the site's original
+    M4A or Opus track at its real bitrate.
+
+  The choice preselected follows the default quality in Settings (Best, up
+  to 1080p/720p/480p, or audio only), so for most downloads you just click
+  **Download**. A small tag in the list shows what was chosen.
 - Or, in the browser, use the **Download** button on the video (see below).
 
 Videos are named after their title. Pause and resume work too (yt-dlp keeps

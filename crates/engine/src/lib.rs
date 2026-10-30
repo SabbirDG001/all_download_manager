@@ -19,7 +19,10 @@ pub use download::{download, download_with_events, part_paths, DownloadOptions, 
 pub use error::{Error, Result};
 pub use filename::sanitize_filename;
 pub use manager::{AddRequest, Change, Entry, Kind, Manager, Status};
-pub use media::{download_media, looks_like_media_page, yt_dlp_args, MediaJob, MediaTools, Quality, MEDIA_SITES};
+pub use media::{
+    download_media, looks_like_media_page, media_info_from_json, probe_media, yt_dlp_args, AudioCodec, FormatOption,
+    MediaFormat, MediaInfo, MediaJob, MediaTools, Quality, MEDIA_SITES,
+};
 pub use probe::{probe, ProbeInfo};
 pub use settings::Settings;
 pub use speed::SpeedMeter;
