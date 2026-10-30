@@ -144,6 +144,8 @@ document.addEventListener("contextmenu", (ev) => ev.preventDefault());
     } else return;
     render();
   });
+  // Don't open with the link highlighted.
+  window.getSelection()?.removeAllRanges();
   entry = await invoke("get_entry", { id });
   if (!entry) { invoke("close_this_window"); return; }
   render();
