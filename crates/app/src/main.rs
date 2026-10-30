@@ -5,7 +5,7 @@ mod bridge;
 mod tray;
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use adm_engine::{
     find_tools, install_deno, install_ffmpeg, install_yt_dlp, list_collection, looks_like_collection, looks_like_media_page,
@@ -212,9 +212,60 @@ async fn run_scheduler_clock(manager: Manager) {
 
 /// Lists the video and audio qualities a page offers.
 #[tauri::command]
-async fn get_media_formats(url: String, headers: Vec<(String, String)>) -> CmdResult<MediaInfo> {
-    let tools = find_tools(&Settings::tools_dir());
-    probe_media(&url, &headers, &tools).await.map_err(|e| e.to_string())
+async fn get_media_formats(app: AppHandle, url: String, headers: Vec<(String, String)>) -> CmdResult<MediaInfo> {
+    cached_formats(&app, &url, &headers).await
+}
+
+/// Answers to "which qualities does this video have", kept for a while: asking
+/// yt-dlp takes several seconds, and the page's menu, the prefetch on hover and
+/// the "Download File Info" window all ask about the same video.
+#[derive(Default)]
+struct FormatCache(Mutex<std::collections::HashMap<String, (std::time::Instant, Arc<tokio::sync::OnceCell<CmdResult<MediaInfo>>>)>>);
+
+const FORMAT_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(20 * 60);
+
+/// The same video under different links (playlist, timestamp) shares one entry.
+fn format_cache_key(url: &str) -> String {
+    let Ok(u) = reqwest_url(url) else { return url.to_string() };
+    let host = u.host_str().unwrap_or("").trim_start_matches("www.").trim_start_matches("m.");
+    if host == "youtube.com" || host == "music.youtube.com" {
+        if let Some((_, v)) = u.query_pairs().find(|(k, _)| k == "v") {
+            return format!("youtube:{v}");
+        }
+    }
+    if host == "youtu.be" {
+        return format!("youtube:{}", u.path().trim_matches('/'));
+    }
+    url.to_string()
+}
+
+fn reqwest_url(url: &str) -> Result<tauri::Url, ()> {
+    tauri::Url::parse(url).map_err(|_| ())
+}
+
+async fn cached_formats(app: &AppHandle, url: &str, headers: &[(String, String)]) -> CmdResult<MediaInfo> {
+    let key = format_cache_key(url);
+    let cell = {
+        let cache = app.state::<FormatCache>();
+        let mut map = cache.0.lock().unwrap();
+        map.retain(|_, (at, cell)| at.elapsed() < FORMAT_CACHE_TTL || cell.get().is_none());
+        map.entry(key.clone())
+            .or_insert_with(|| (std::time::Instant::now(), Arc::new(tokio::sync::OnceCell::new())))
+            .1
+            .clone()
+    };
+    let result = cell
+        .get_or_init(|| async {
+            let tools = find_tools(&Settings::tools_dir());
+            probe_media(url, headers, &tools).await.map_err(|e| e.to_string())
+        })
+        .await
+        .clone();
+    if result.is_err() {
+        // Don't keep failures: the next try may work (after installing Deno, say).
+        app.state::<FormatCache>().0.lock().unwrap().remove(&key);
+    }
+    result
 }
 
 /// Whether a link should go to yt-dlp (video sites, stream playlists).
@@ -336,8 +387,10 @@ fn resize_this_window(window: WebviewWindow, width: f64, height: f64) {
 }
 
 /// Opens (or brings forward) the progress window of a download.
+// Commands that create windows must be async: on Windows a window created
+// from a synchronous command deadlocks the app.
 #[tauri::command]
-fn open_progress_window(app: AppHandle, id: u64) {
+async fn open_progress_window(app: AppHandle, id: u64) {
     show_progress_window(&app, id);
 }
 
@@ -368,9 +421,9 @@ fn after_start(app: &AppHandle, id: u64) {
 /// Adds a download and opens its progress window (main window's Add, and the
 /// "Download File Info" window).
 #[tauri::command]
-fn add_and_watch(app: AppHandle, manager: State<Manager>, request: AddRequest) -> CmdResult<u64> {
+async fn add_and_watch(app: AppHandle, request: AddRequest) -> CmdResult<u64> {
     let start_now = !request.paused && !request.scheduled;
-    let id = manager.add(request).map_err(|e| e.to_string())?;
+    let id = app.state::<Manager>().add(request).map_err(|e| e.to_string())?;
     if start_now {
         after_start(&app, id);
     }
@@ -422,13 +475,10 @@ async fn handle_browser_request(app: &AppHandle, req: bridge::Request) -> Value 
             json!({ "ok": true })
         }
         // The qualities a video offers, for the menu on the page.
-        "formats" => {
-            let tools = find_tools(&Settings::tools_dir());
-            match probe_media(&req.url, &req.headers(), &tools).await {
-                Ok(info) => json!({ "ok": true, "info": info }),
-                Err(e) => json!({ "ok": false, "error": e.to_string() }),
-            }
-        }
+        "formats" => match cached_formats(app, &req.url, &req.headers()).await {
+            Ok(info) => json!({ "ok": true, "info": info }),
+            Err(e) => json!({ "ok": false, "error": e }),
+        },
         "add" => {
             let manager = app.state::<Manager>();
             let filename = Some(req.filename.clone()).filter(|f| !f.is_empty());
@@ -540,6 +590,7 @@ fn main() {
             );
             app.manage(manager.clone());
             app.manage(PendingFromBrowser::default());
+            app.manage(FormatCache::default());
             tauri::async_runtime::spawn(run_scheduler_clock(manager));
             tauri::async_runtime::spawn(tray::run_notifier(app.handle().clone(), finished_rx));
             if let Err(e) = tray::create(app.handle()) {
@@ -605,4 +656,18 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("failed to start All Download Manager");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_cache_key;
+
+    #[test]
+    fn same_video_shares_a_cache_entry() {
+        let a = format_cache_key("https://www.youtube.com/watch?v=ZxQENN5kXfI&list=RDZxQENN5kXfI&start_radio=1");
+        assert_eq!(a, "youtube:ZxQENN5kXfI");
+        assert_eq!(format_cache_key("https://youtu.be/ZxQENN5kXfI"), a);
+        assert_eq!(format_cache_key("https://m.youtube.com/watch?v=ZxQENN5kXfI&t=30"), a);
+        assert_eq!(format_cache_key("https://vimeo.com/123"), "https://vimeo.com/123");
+    }
 }

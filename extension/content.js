@@ -129,15 +129,20 @@
     return el;
   }
 
+  /** Starts asking for the qualities (yt-dlp takes a few seconds), once per page. */
+  function fetchFormats(url) {
+    if (!formatCache.has(url)) {
+      formatCache.set(url, new Promise((resolve) => chrome.runtime.sendMessage({ type: "formats", url }, resolve)));
+    }
+    return formatCache.get(url);
+  }
+
   async function openMenu() {
     menuOpen = true;
     menu.hidden = false;
     menu.replaceChildren(note("Getting the qualities…"));
     const url = location.href;
-    if (!formatCache.has(url)) {
-      formatCache.set(url, new Promise((resolve) => chrome.runtime.sendMessage({ type: "formats", url }, resolve)));
-    }
-    const res = await formatCache.get(url);
+    const res = await fetchFormats(url);
     if (!menuOpen) return;
     if (!res?.ok) {
       formatCache.delete(url);
@@ -186,6 +191,8 @@
   function show(video) {
     ensureButton();
     current = video;
+    // Pointing at a video: get its qualities now, so the menu is ready on click.
+    if (onVideoSite()) fetchFormats(location.href);
     const r = video.getBoundingClientRect();
     host.style.display = "block";
     const w = menuOpen ? 340 : host.offsetWidth || 110;
