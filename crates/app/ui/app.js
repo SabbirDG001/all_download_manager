@@ -620,7 +620,10 @@ async function refreshTools() {
     const btn = row.querySelector(".tool-btn");
     if (installing.has(name)) continue;
     if (info) {
-      stateEl.textContent = `${info.version || "installed"}${info.managed ? "" : " (from your system)"}`;
+      // A copy found on the computer is used as is; it's updated wherever it came from.
+      stateEl.textContent = info.managed
+        ? `${info.version || "installed"} · ready`
+        : `${info.version || "installed"} · already on your computer, ready to use`;
     } else if (name === "ffmpeg") {
       stateEl.textContent = toolsStatus.canInstallFfmpeg
         ? "not installed: needed to merge HD video and make MP3s"
