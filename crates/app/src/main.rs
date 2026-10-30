@@ -6,7 +6,10 @@ mod bridge;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use adm_engine::{AddRequest, Entry, Manager, Settings};
+use adm_engine::{
+    install_ffmpeg, install_yt_dlp, looks_like_media_page, tools_status, AddRequest, CancellationToken, Entry,
+    Manager, Progress, Settings, ToolsStatus,
+};
 use serde::Serialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager as _, State, WebviewWindow};
@@ -76,6 +79,33 @@ fn save_settings(manager: State<Manager>, settings: Settings) -> CmdResult<()> {
     Ok(())
 }
 
+#[tauri::command]
+async fn get_tools_status() -> ToolsStatus {
+    tools_status(&Settings::tools_dir()).await
+}
+
+/// Installs or updates yt-dlp or ffmpeg, reporting "tool-progress" events.
+#[tauri::command]
+async fn install_tool(app: AppHandle, name: String) -> CmdResult<()> {
+    let dir = Settings::tools_dir();
+    let tool = name.clone();
+    let on_progress = move |p: Progress| {
+        let _ = app.emit("tool-progress", json!({ "name": tool, "downloaded": p.downloaded, "total": p.total }));
+    };
+    let result = match name.as_str() {
+        "yt-dlp" => install_yt_dlp(&dir, on_progress, CancellationToken::new()).await,
+        "ffmpeg" => install_ffmpeg(&dir, on_progress, CancellationToken::new()).await,
+        other => return Err(format!("unknown tool '{other}'")),
+    };
+    result.map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// Whether a link should go to yt-dlp (video sites, stream playlists).
+#[tauri::command]
+fn looks_like_media(url: String) -> bool {
+    looks_like_media_page(&url)
+}
+
 /// Shows the folder picker; returns `None` when cancelled.
 #[tauri::command]
 async fn pick_folder(app: AppHandle, start: Option<String>) -> Option<String> {
@@ -107,6 +137,8 @@ fn show_in_folder(app: AppHandle, path: String) -> CmdResult<()> {
 struct BrowserDownload {
     url: String,
     filename: Option<String>,
+    media: bool,
+    title: String,
     referrer: String,
     headers: Vec<(String, String)>,
 }
@@ -167,10 +199,13 @@ fn handle_browser_request(app: &AppHandle, req: bridge::Request) -> Value {
         "add" => {
             let manager = app.state::<Manager>();
             let filename = Some(req.filename.clone()).filter(|f| !f.is_empty());
+            let media = req.media || looks_like_media_page(&req.url);
             if manager.settings().confirm_browser_downloads {
                 app.state::<PendingFromBrowser>().0.lock().unwrap().push(BrowserDownload {
                     url: req.url.clone(),
                     filename,
+                    media,
+                    title: req.title.clone(),
                     referrer: req.referrer.clone(),
                     headers: req.headers(),
                 });
@@ -178,7 +213,14 @@ fn handle_browser_request(app: &AppHandle, req: bridge::Request) -> Value {
                 show();
                 json!({ "ok": true })
             } else {
-                let request = AddRequest { url: req.url.clone(), filename, headers: req.headers(), ..Default::default() };
+                let request = AddRequest {
+                    url: req.url.clone(),
+                    filename: filename.filter(|_| !media),
+                    headers: req.headers(),
+                    media,
+                    title: Some(req.title.clone()),
+                    ..Default::default()
+                };
                 match manager.add(request) {
                     Ok(_) => json!({ "ok": true }),
                     Err(e) => json!({ "ok": false, "error": e.to_string() }),
@@ -247,6 +289,9 @@ fn main() {
             show_in_folder,
             take_browser_downloads,
             open_extension_folder,
+            get_tools_status,
+            install_tool,
+            looks_like_media,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start All Download Manager");

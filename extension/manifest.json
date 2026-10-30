@@ -2,16 +2,49 @@
   "manifest_version": 3,
   "name": "All Download Manager",
   "version": "0.1.0",
-  "description": "Sends your downloads to the All Download Manager app for faster, resumable downloads.",
+  "description": "Sends your downloads, videos and music to the All Download Manager app for faster, resumable downloads.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsc17bbDW+e3kosyCNn3749LFuri56rvAZAr+lXfqk9c3ovcVDnR0TTGi75MVtJNChrKzdydEuRp2zswb28fabzIClItj25N29317w24wrb2KL9R/gDnswrsWOTZtX9z81xEwHVQIZhdUyETICmYXq6R8v4hFU3AgvI5oj5mpM0nDIa30iC17fif4L7ewcP4Qip0hXkfdCzWTtDhVih+upe5QbetUIDJkdHEbKrUwUU5HlcgSDHYVh768O5F8a2EJejvJfz9dnifaKp5isyQcRzZvFwbtAhlJ01aeBS5MzEhBMz620iDfes/CI40jVwHVg3jWDy5lpO/XmyiFHTq+/QIDAQAB",
   "minimum_chrome_version": "110",
-  "permissions": ["downloads", "nativeMessaging", "contextMenus", "storage", "cookies"],
-  "host_permissions": ["<all_urls>"],
-  "background": { "service_worker": "background.js" },
+  "permissions": [
+    "downloads",
+    "nativeMessaging",
+    "contextMenus",
+    "storage",
+    "cookies",
+    "webRequest",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
     "default_title": "All Download Manager",
     "default_popup": "popup.html",
-    "default_icon": { "16": "icons/16.png", "32": "icons/32.png" }
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png"
+    }
   },
-  "icons": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" }
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "all_frames": true,
+      "run_at": "document_idle"
+    }
+  ]
 }

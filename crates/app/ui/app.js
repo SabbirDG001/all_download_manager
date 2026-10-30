@@ -40,6 +40,7 @@ function percent(e) {
 
 function displayName(e) {
   if (e.filename) return e.filename;
+  if (e.title) return e.title;
   try {
     const last = new URL(e.url).pathname.split("/").filter(Boolean).pop();
     return last ? decodeURIComponent(last) : e.url;
@@ -68,7 +69,9 @@ function kindOf(ext) {
 function statusLabel(e) {
   switch (e.status) {
     case "queued": return "Queued";
-    case "downloading": return e.total == null && e.downloaded === 0 ? "Connecting…" : "Downloading";
+    case "downloading":
+      if (e.stage) return `${e.stage}…`;
+      return e.total == null && e.downloaded === 0 ? "Connecting…" : "Downloading";
     case "paused": return "Paused";
     case "completed": return "Finished";
     case "failed": return "Failed";
@@ -111,7 +114,8 @@ function createRow(e) {
 
 function updateRow(tr, e) {
   const name = displayName(e);
-  const ext = extOf(name);
+  let ext = extOf(name);
+  if (!ext && e.kind === "media") ext = e.quality === "audio" ? "mp3" : "mp4";
   tr.dataset.status = e.status;
   tr.classList.toggle("selected", state.selected.has(e.id));
   tr.title = e.error ? `${e.url}\n\n${e.error}` : e.url;
@@ -309,24 +313,32 @@ function urlsFrom(text) {
   return text.split(/\s+/).map((s) => s.trim()).filter(looksLikeUrl);
 }
 
-// Request headers (cookies, referrer) of a download sent by the browser.
+// Request headers (cookies, referrer) and page title of a download sent by the browser.
 let addHeaders = [];
+let addTitle = null;
 
 async function openAdd(prefill = "", fromBrowser = null) {
   if (!state.settings) await loadSettings();
   addHeaders = fromBrowser?.headers || [];
+  addTitle = fromBrowser?.title || null;
   $("#add-title").textContent = fromBrowser ? "Download from browser" : "Add download";
   let source = "";
   if (fromBrowser?.referrer) {
     try { source = `From ${new URL(fromBrowser.referrer).host}`; } catch { /* not a URL */ }
   }
+  if (fromBrowser?.title) source = source ? `${source} · ${fromBrowser.title}` : fromBrowser.title;
   $("#add-source").textContent = source;
   $("#add-source").hidden = !source;
   $("#add-urls").value = prefill;
   $("#add-dir").value = state.settings.download_dir;
   $("#add-name").value = fromBrowser?.filename || "";
   $("#add-start").checked = true;
+  $("#add-media").checked = !!fromBrowser?.media;
+  $("#add-quality").value = state.settings.video_quality || "best";
+  mediaTouched = false;
   updateAddName();
+  if (!fromBrowser) detectMedia();
+  refreshToolsWarning();
   $("#dlg-add").showModal();
   (fromBrowser ? $("#form-add button[type=submit]") : $("#add-urls")).focus();
 }
@@ -335,7 +347,7 @@ async function openAdd(prefill = "", fromBrowser = null) {
 const browserQueue = [];
 
 async function takeBrowserDownloads() {
-  browserQueue.push(...(await call("take_browser_downloads")));
+  browserQueue.push(...((await call("take_browser_downloads")) || []));
   showNextBrowserDownload();
 }
 
@@ -349,10 +361,41 @@ $("#dlg-add").addEventListener("close", () => setTimeout(showNextBrowserDownload
 
 function updateAddName() {
   const several = urlsFrom($("#add-urls").value).length > 1;
+  const media = $("#add-media").checked;
   $("#add-name").disabled = several;
   if (several) $("#add-name").value = "";
+  $("#add-name-field").hidden = media;
+  $("#add-quality").disabled = !media;
+  refreshToolsWarning();
 }
-$("#add-urls").addEventListener("input", updateAddName);
+
+// Ticks "Video or audio page" for YouTube-like links, until the user decides.
+let mediaTouched = false;
+let detectTimer = null;
+function detectMedia() {
+  clearTimeout(detectTimer);
+  detectTimer = setTimeout(async () => {
+    if (mediaTouched) return;
+    const first = urlsFrom($("#add-urls").value)[0];
+    $("#add-media").checked = first ? await call("looks_like_media", { url: first }) : false;
+    updateAddName();
+  }, 150);
+}
+
+$("#add-urls").addEventListener("input", () => { updateAddName(); detectMedia(); });
+$("#add-media").addEventListener("change", () => { mediaTouched = true; updateAddName(); });
+
+let toolsStatus = null;
+async function refreshToolsWarning() {
+  if ($("#add-media").checked && !toolsStatus) toolsStatus = await call("get_tools_status");
+  $("#add-tools-warning").hidden = !($("#add-media").checked && toolsStatus && !toolsStatus.ytDlp);
+}
+
+$("#add-open-settings").addEventListener("click", (ev) => {
+  ev.preventDefault();
+  $("#dlg-add").close();
+  openSettings();
+});
 
 $("#form-add").addEventListener("submit", async (ev) => {
   ev.preventDefault();
@@ -361,10 +404,15 @@ $("#form-add").addEventListener("submit", async (ev) => {
   const dir = $("#add-dir").value.trim() || null;
   const filename = $("#add-name").value.trim() || null;
   const paused = !$("#add-start").checked;
+  const media = $("#add-media").checked;
+  const quality = $("#add-quality").value;
   try {
     for (const url of urls) {
       await call("add", {
-        request: { url, dir, filename: urls.length === 1 ? filename : null, paused, headers: addHeaders },
+        request: {
+          url, dir, paused, media, quality, headers: addHeaders, title: addTitle,
+          filename: urls.length === 1 && !media ? filename : null,
+        },
       });
     }
     $("#dlg-add").close();
@@ -403,6 +451,8 @@ async function openSettings() {
   $("#set-max-active").value = s.max_active;
   $("#set-user-agent").value = s.user_agent || "";
   $("#set-confirm-browser").checked = s.confirm_browser_downloads;
+  $("#set-video-quality").value = s.video_quality || "best";
+  refreshTools();
   $("#set-info").textContent = info.portable
     ? `Portable mode: settings and the download list are kept next to the program, in ${info.path}`
     : `Settings are saved in ${info.path}. For portable mode, put a settings.json file containing {} next to the program.`;
@@ -410,6 +460,57 @@ async function openSettings() {
 }
 
 $("#set-temp-clear").onclick = () => { $("#set-temp-dir").value = ""; };
+// ---------- yt-dlp and ffmpeg ----------
+
+const installing = new Set();
+
+async function refreshTools() {
+  toolsStatus = await call("get_tools_status");
+  for (const row of $$(".tool")) {
+    const name = row.dataset.tool;
+    const info = name === "yt-dlp" ? toolsStatus.ytDlp : toolsStatus.ffmpeg;
+    const stateEl = row.querySelector(".tool-state");
+    const btn = row.querySelector(".tool-btn");
+    if (installing.has(name)) continue;
+    if (info) {
+      stateEl.textContent = `${info.version || "installed"}${info.managed ? "" : " (from your system)"}`;
+    } else if (name === "ffmpeg") {
+      stateEl.textContent = toolsStatus.canInstallFfmpeg
+        ? "not installed: needed to merge HD video and make MP3s"
+        : "not installed: install it with your package manager";
+    } else {
+      stateEl.textContent = "not installed: needed for YouTube and other video sites";
+    }
+    const canInstall = name === "yt-dlp" || toolsStatus.canInstallFfmpeg;
+    btn.hidden = !canInstall || (info && !info.managed);
+    btn.textContent = info ? "Update" : "Install";
+    btn.disabled = false;
+  }
+}
+
+for (const row of $$(".tool")) {
+  const name = row.dataset.tool;
+  const btn = row.querySelector(".tool-btn");
+  btn.onclick = async () => {
+    installing.add(name);
+    btn.disabled = true;
+    btn.textContent = "Starting…";
+    try {
+      await call("install_tool", { name });
+      toast(`${name} is ready`);
+    } catch { /* toast already shown */ }
+    installing.delete(name);
+    toolsStatus = null;
+    refreshTools();
+  };
+}
+
+listen("tool-progress", (ev) => {
+  const { name, downloaded, total } = ev.payload;
+  const btn = document.querySelector(`.tool[data-tool="${name}"] .tool-btn`);
+  if (btn) btn.textContent = total ? `${Math.floor((downloaded / total) * 100)}%` : fmtBytes(downloaded);
+});
+
 $("#set-open-extension").onclick = () => call("open_extension_folder").catch(() => {});
 
 $("#form-settings").addEventListener("submit", async (ev) => {
@@ -422,6 +523,7 @@ $("#form-settings").addEventListener("submit", async (ev) => {
     max_active: Number($("#set-max-active").value),
     user_agent: $("#set-user-agent").value.trim() || null,
     confirm_browser_downloads: $("#set-confirm-browser").checked,
+    video_quality: $("#set-video-quality").value,
   };
   try {
     await call("save_settings", { settings });

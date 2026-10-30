@@ -14,6 +14,10 @@ pub enum Error {
     ConnectionClosed,
     #[error("invalid header: {0}")]
     InvalidHeader(String),
+    #[error("{0} is not installed. Install it in Settings.")]
+    ToolMissing(&'static str),
+    #[error("{0}")]
+    Tool(String),
     #[error("download was cancelled")]
     Cancelled,
     #[error("download finished with {got} of {expected} bytes")]

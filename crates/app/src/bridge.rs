@@ -33,6 +33,10 @@ pub struct Request {
     pub referrer: String,
     pub cookies: String,
     pub user_agent: String,
+    /// A video/audio page or stream, for yt-dlp.
+    pub media: bool,
+    /// Page title, shown until the real name is known.
+    pub title: String,
     /// Added by the host; checked by the app.
     pub token: String,
 }

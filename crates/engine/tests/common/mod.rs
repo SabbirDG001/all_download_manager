@@ -104,3 +104,41 @@ pub fn temp_dir(name: &str) -> PathBuf {
     dir
 }
 
+
+/// Serves the files in `dir` (no ranges), for tools such as yt-dlp.
+pub async fn serve_dir(dir: PathBuf) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut sock, _)) = listener.accept().await else { return };
+            let dir = dir.clone();
+            tokio::spawn(async move {
+                let mut req = Vec::new();
+                let mut buf = [0u8; 1024];
+                while !req.windows(4).any(|w| w == b"\r\n\r\n") {
+                    let Ok(n) = sock.read(&mut buf).await else { return };
+                    if n == 0 {
+                        return;
+                    }
+                    req.extend_from_slice(&buf[..n]);
+                }
+                let req = String::from_utf8_lossy(&req);
+                let path = req.split_whitespace().nth(1).unwrap_or("/").split('?').next().unwrap();
+                let file = dir.join(path.trim_start_matches('/'));
+                let (status, body) = match std::fs::read(&file) {
+                    Ok(body) if !path.contains("..") => ("200 OK", body),
+                    _ => ("404 Not Found", Vec::new()),
+                };
+                let kind = if path.ends_with(".html") { "text/html" } else { "application/octet-stream" };
+                let head = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = sock.write_all(head.as_bytes()).await;
+                let _ = sock.write_all(&body).await;
+            });
+        }
+    });
+    format!("http://{addr}")
+}

@@ -10,8 +10,8 @@ Manager, with a browser extension for Chrome and Brave.
 | 1 | Download engine + command-line tool (`crates/engine`) | done |
 | 2 | Desktop app (`crates/app`, Tauri) with download list, queue, settings, installer | done |
 | 3 | Chrome / Brave / Edge extension (`extension/`) + Native Messaging bridge | done |
-| 4 | Video and audio detection (yt-dlp + ffmpeg) | next |
-| 5 | Scheduler, categories, speed limit | planned |
+| 4 | Video and audio: yt-dlp + ffmpeg, media detection in the browser | done |
+| 5 | Scheduler, categories, speed limit | next |
 
 ## Getting the Windows app
 
@@ -44,6 +44,33 @@ The app uses Microsoft Edge WebView2, which Windows 10 and 11 already have.
 - Follows the Windows light or dark theme.
 - Keyboard: Ctrl+N add, Delete delete, Ctrl+A select all, Enter open, Esc deselect.
 
+## Video and audio
+
+The app downloads from YouTube and
+[over a thousand other sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md),
+and from HLS/DASH streams, using two free helper programs:
+
+- **yt-dlp** gets the video out of the site. Required for video downloads.
+- **ffmpeg** joins separate video and audio (needed for 1080p and up on
+  YouTube) and makes MP3s. Without it you get the best single file the site offers.
+
+Install both from **Settings → Video and audio** (Install / Update buttons).
+They go into a `tools` folder in the app's data folder (in portable mode,
+next to the program), and copies already on your `PATH` are used too. Keep
+yt-dlp updated: sites change often and new versions follow them.
+
+To download a video:
+
+- Paste the page's link into **Add URL**. Links from known video sites (and
+  `.m3u8`/`.mpd` streams) are ticked as **Video or audio page** automatically.
+- Choose the quality: Best, up to 1080p/720p/480p, or **Audio only (MP3)**.
+  The default is in Settings.
+- Or, in the browser, use the **Download** button on the video (see below).
+
+Videos are named after their title. Pause and resume work too (yt-dlp keeps
+its partial files). DRM-protected services (Netflix, Spotify, Disney+ and
+similar) can't be downloaded.
+
 ## Browser extension (Chrome, Brave, Edge)
 
 ### Install
@@ -63,6 +90,12 @@ The app uses Microsoft Edge WebView2, which Windows 10 and 11 already have.
   stopped and the app takes over. Turn this off in the extension's popup.
 - **Right-click menu:** "Download link with All Download Manager" on links,
   images, video and audio.
+- **Download button on videos:** point at a video and a **Download** button
+  appears in its corner. On video sites the page goes to yt-dlp; elsewhere the
+  stream or file the page is playing is used. Can be turned off in the popup.
+- **Finds media:** video, audio and HLS/DASH streams that pages load are
+  counted on the extension icon and listed in its popup, each with a
+  download button.
 - **Keeps you logged in:** the browser's cookies, referrer and user agent are
   sent with the link, so downloads that need a login still work.
 - **Asks first:** the app comes to the front with the download dialog, so you
@@ -157,3 +190,6 @@ cargo test
 The tests run against a small local HTTP server and check segmented downloads,
 the single-connection fallback, not overwriting files, resuming after a pause,
 and the download list (queue limit, pause/resume, delete, surviving a restart).
+If yt-dlp and ffmpeg are on `PATH`, a test also downloads a local HLS stream
+and extracts MP3 audio with them. `cargo test -- --ignored` additionally
+installs yt-dlp from GitHub.

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Error, Result};
+use crate::{Error, Quality, Result};
 
 const FILE_NAME: &str = "settings.json";
 
@@ -29,6 +29,8 @@ pub struct Settings {
     /// Show the download dialog for links sent by the browser extension,
     /// instead of starting them straight away.
     pub confirm_browser_downloads: bool,
+    /// Default quality for video and audio downloads.
+    pub video_quality: Quality,
 }
 
 impl Default for Settings {
@@ -43,6 +45,7 @@ impl Default for Settings {
             max_active: 3,
             user_agent: None,
             confirm_browser_downloads: true,
+            video_quality: Quality::Best,
         }
     }
 }
@@ -59,6 +62,11 @@ impl Settings {
     /// Whether settings are kept next to the program (portable mode).
     pub fn is_portable() -> bool {
         portable_dir().is_some()
+    }
+
+    /// Folder for yt-dlp and ffmpeg.
+    pub fn tools_dir() -> PathBuf {
+        Self::data_dir().join("tools")
     }
 
     /// Where the settings file is read from and written to.

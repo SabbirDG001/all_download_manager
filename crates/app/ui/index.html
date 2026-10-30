@@ -109,6 +109,17 @@
         <span>File name <small>(leave empty to use the server's name)</small></span>
         <input id="add-name" type="text" spellcheck="false">
       </label>
+      <div class="media-row">
+        <label class="check"><input id="add-media" type="checkbox"> Video or audio page <small class="muted">(uses yt-dlp)</small></label>
+        <select id="add-quality" aria-label="Quality">
+          <option value="best">Best quality</option>
+          <option value="1080p">Up to 1080p</option>
+          <option value="720p">Up to 720p</option>
+          <option value="480p">Up to 480p</option>
+          <option value="audio">Audio only (MP3)</option>
+        </select>
+      </div>
+      <p id="add-tools-warning" class="warning small" hidden>yt-dlp isn't installed yet. Install it in <a href="#" id="add-open-settings">Settings</a>.</p>
       <label class="check"><input id="add-start" type="checkbox" checked> Start now</label>
       <div class="actions">
         <button type="button" class="btn" data-close>Cancel</button>
@@ -164,6 +175,28 @@
         <input id="set-user-agent" type="text" spellcheck="false" placeholder="AllDownloadManager">
       </label>
       <label class="check"><input id="set-confirm-browser" type="checkbox"> Ask before downloading links from the browser</label>
+      <div class="tools-box">
+        <div class="tools-head">
+          <b>Video and audio</b>
+          <label class="inline">Default quality
+            <select id="set-video-quality">
+              <option value="best">Best</option>
+              <option value="1080p">Up to 1080p</option>
+              <option value="720p">Up to 720p</option>
+              <option value="480p">Up to 480p</option>
+              <option value="audio">Audio only (MP3)</option>
+            </select>
+          </label>
+        </div>
+        <div class="tool" data-tool="yt-dlp">
+          <div><b>yt-dlp</b> <span class="muted small tool-state">Checking…</span></div>
+          <button type="button" class="btn tool-btn" hidden>Install</button>
+        </div>
+        <div class="tool" data-tool="ffmpeg">
+          <div><b>ffmpeg</b> <span class="muted small tool-state">Checking…</span></div>
+          <button type="button" class="btn tool-btn" hidden>Install</button>
+        </div>
+      </div>
       <div class="extension-box">
         <div>
           <b>Browser extension</b>

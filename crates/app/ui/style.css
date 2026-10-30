@@ -217,6 +217,21 @@ dialog h2 { margin: 0; font-size: 16px; }
   padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
 }
 .extension-box p { margin-top: 2px; }
+.media-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+select {
+  font: inherit; color: inherit; padding: 5px 8px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg);
+}
+.warning { color: var(--warn); margin: -6px 0 0; }
+.warning a { color: inherit; }
+.tools-box {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+}
+.tools-head { display: flex; align-items: center; justify-content: space-between; }
+.inline { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.tool { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 30px; }
+.tool .tool-state { margin-left: 6px; }
 .small { font-size: 12px; user-select: text; overflow-wrap: anywhere; }
 
 /* Context menu */

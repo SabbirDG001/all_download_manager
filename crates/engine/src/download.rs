@@ -62,6 +62,10 @@ pub enum Event {
     /// The server answered; the file name and size are now known.
     Started { filename: String, total: Option<u64>, resumable: bool },
     Progress(Progress),
+    /// Video/audio downloads: the media's id and title are known.
+    Media { id: String, title: String },
+    /// Video/audio downloads: a step after downloading, such as "Merging".
+    Stage(String),
 }
 
 #[derive(Debug, Clone, Copy)]

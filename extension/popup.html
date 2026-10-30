@@ -16,6 +16,19 @@
   </div>
   <p id="error" class="error" hidden></p>
 
+  <section id="page-video" class="card" hidden>
+    <div class="card-text">
+      <b>Video on this page</b>
+      <span id="page-title" class="muted"></span>
+    </div>
+    <button id="page-download" class="btn small">Download</button>
+  </section>
+
+  <section id="media" hidden>
+    <h2>Media found on this page</h2>
+    <ul id="media-list"></ul>
+  </section>
+
   <label class="toggle">
     <input type="checkbox" id="catch">
     <span class="switch"></span>
@@ -23,8 +36,16 @@
   </label>
   <p class="hint">When on, files you download go to the app instead of the browser. Right-click a link to send it on demand.</p>
 
+  <label class="toggle">
+    <input type="checkbox" id="video-button">
+    <span class="switch"></span>
+    <span>Show "Download" on videos</span>
+  </label>
+  <p class="hint">A button appears over videos when you point at them.</p>
+
   <button id="open" class="btn">Open the app</button>
 
+  <script src="sites.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

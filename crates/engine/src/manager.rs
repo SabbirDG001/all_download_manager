@@ -11,7 +11,9 @@ use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
 
 use crate::download::{download_with_events, part_paths, DownloadOptions, Event};
-use crate::{Error, Settings, SpeedMeter};
+use crate::media::{delete_partial_media, download_media, MediaJob};
+use crate::tools::find_tools;
+use crate::{Error, Quality, Settings, SpeedMeter};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -21,6 +23,17 @@ pub enum Status {
     Paused,
     Completed,
     Failed,
+}
+
+/// How a download is fetched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Kind {
+    /// A plain file, with the engine's parallel connections.
+    #[default]
+    File,
+    /// A video or audio page or stream, through yt-dlp.
+    Media,
 }
 
 /// One row of the download list.
@@ -46,6 +59,19 @@ pub struct Entry {
     /// Request headers from the browser, such as cookies.
     #[serde(default)]
     pub headers: Vec<(String, String)>,
+    #[serde(default)]
+    pub kind: Kind,
+    /// Video/audio downloads: chosen quality.
+    #[serde(default)]
+    pub quality: Quality,
+    /// Video/audio downloads: the media's title and id, once known.
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub media_id: Option<String>,
+    /// A step after downloading, such as "Merging".
+    #[serde(skip_deserializing)]
+    pub stage: Option<String>,
     /// Bytes per second, while downloading.
     #[serde(skip_deserializing)]
     pub speed: f64,
@@ -63,6 +89,12 @@ pub struct AddRequest {
     pub headers: Vec<(String, String)>,
     /// Add it paused instead of queuing it.
     pub paused: bool,
+    /// Fetch it with yt-dlp as video/audio.
+    pub media: bool,
+    /// Video/audio quality; the default from settings when unset.
+    pub quality: Option<Quality>,
+    /// Title of the page the link came from, shown until the real one is known.
+    pub title: Option<String>,
 }
 
 /// What the list's listeners are told.
@@ -72,7 +104,7 @@ pub enum Change {
     /// The whole list, after something was added, removed or finished.
     List(Vec<Entry>),
     /// Progress of one download.
-    Updated(Entry),
+    Updated(Box<Entry>),
 }
 
 type Listener = dyn Fn(Change) + Send + Sync;
@@ -95,6 +127,8 @@ struct Inner {
     next_id: u64,
     running: HashMap<u64, Running>,
     settings: Settings,
+    /// Where yt-dlp and ffmpeg are installed.
+    tools_dir: PathBuf,
 }
 
 struct Running {
@@ -103,6 +137,8 @@ struct Running {
     delete_files: bool,
     /// File name in use, for cleaning up the partial file.
     filename: Option<String>,
+    /// Video/audio downloads: id used in the partial files' names.
+    media_id: Option<String>,
     speed: SpeedMeter,
 }
 
@@ -128,7 +164,13 @@ impl Manager {
 
         let manager = Self {
             shared: Arc::new(Shared {
-                inner: Mutex::new(Inner { entries, next_id, running: HashMap::new(), settings }),
+                inner: Mutex::new(Inner {
+                    entries,
+                    next_id,
+                    running: HashMap::new(),
+                    settings,
+                    tools_dir: Settings::tools_dir(),
+                }),
                 listener: Box::new(listener),
                 runtime,
                 store_path,
@@ -144,6 +186,11 @@ impl Manager {
 
     pub fn settings(&self) -> Settings {
         self.shared.inner.lock().unwrap().settings.clone()
+    }
+
+    /// Uses yt-dlp and ffmpeg from `dir` (default: the data folder's `tools`).
+    pub fn set_tools_dir(&self, dir: PathBuf) {
+        self.shared.inner.lock().unwrap().tools_dir = dir;
     }
 
     /// Uses new settings for downloads started from now on.
@@ -177,6 +224,11 @@ impl Manager {
                 error: None,
                 added_at: SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs()),
                 headers: req.headers,
+                kind: if req.media { Kind::Media } else { Kind::File },
+                quality: req.quality.unwrap_or(inner.settings.video_quality),
+                title: req.title.filter(|t| !t.trim().is_empty()),
+                media_id: None,
+                stage: None,
                 speed: 0.0,
                 connections: 0,
             });
@@ -289,9 +341,11 @@ impl Manager {
 
     fn start(&self, inner: &mut Inner, id: u64) {
         let settings = inner.settings.clone();
+        let tools_dir = inner.tools_dir.clone();
         let Some(entry) = inner.entries.iter_mut().find(|e| e.id == id) else { return };
         entry.status = Status::Downloading;
         entry.error = None;
+        entry.stage = None;
 
         let opts = DownloadOptions {
             dir: entry.dir.clone(),
@@ -310,25 +364,45 @@ impl Manager {
                 cancel: cancel.clone(),
                 delete_files: false,
                 filename: opts.filename.clone(),
+                media_id: entry.media_id.clone(),
                 speed: SpeedMeter::default(),
             },
         );
 
         let this = self.clone();
-        self.shared.runtime.spawn(async move {
-            let events = this.clone();
-            let result =
-                download_with_events(&url, &opts, move |ev| events.on_event(id, ev), cancel).await;
-            this.finish(id, result, &opts);
-        });
+        if entry.kind == Kind::Media {
+            let job = MediaJob {
+                url,
+                dir: opts.dir.clone(),
+                temp_dir: opts.temp_dir.clone(),
+                quality: entry.quality,
+                headers: opts.headers.clone(),
+                title_hint: entry.title.clone(),
+            };
+            self.shared.runtime.spawn(async move {
+                let tools = find_tools(&tools_dir);
+                let events = this.clone();
+                let result = download_media(&job, &tools, move |ev| events.on_event(id, ev), cancel).await;
+                this.finish(id, result, &opts);
+            });
+        } else {
+            self.shared.runtime.spawn(async move {
+                let events = this.clone();
+                let result =
+                    download_with_events(&url, &opts, move |ev| events.on_event(id, ev), cancel).await;
+                this.finish(id, result, &opts);
+            });
+        }
     }
 
     fn on_event(&self, id: u64, event: Event) {
         let updated = {
             let mut inner = self.shared.inner.lock().unwrap();
             let Inner { entries, running, .. } = &mut *inner;
-            if let (Event::Started { filename, .. }, Some(r)) = (&event, running.get_mut(&id)) {
-                r.filename = Some(filename.clone());
+            match (&event, running.get_mut(&id)) {
+                (Event::Started { filename, .. }, Some(r)) => r.filename = Some(filename.clone()),
+                (Event::Media { id, .. }, Some(r)) => r.media_id = Some(id.clone()),
+                _ => {}
             }
             let Some(entry) = entries.iter_mut().find(|e| e.id == id) else { return };
             if entry.status != Status::Downloading {
@@ -340,7 +414,16 @@ impl Manager {
                     entry.total = total;
                     entry.resumable = resumable;
                 }
+                Event::Media { id, title } => {
+                    entry.media_id = Some(id);
+                    entry.title = Some(title);
+                }
+                Event::Stage(stage) => {
+                    entry.stage = Some(stage);
+                    entry.speed = 0.0;
+                }
                 Event::Progress(p) => {
+                    entry.stage = None;
                     entry.downloaded = p.downloaded;
                     entry.total = p.total;
                     entry.connections = p.connections;
@@ -351,7 +434,7 @@ impl Manager {
             }
             entry.clone()
         };
-        (self.shared.listener)(Change::Updated(updated));
+        (self.shared.listener)(Change::Updated(Box::new(updated)));
     }
 
     fn finish(&self, id: u64, result: crate::Result<PathBuf>, opts: &DownloadOptions) {
@@ -367,15 +450,26 @@ impl Manager {
                         if let Some(name) = &r.filename {
                             delete_part_files(opts.work_dir(), name);
                         }
+                        if let Some(media_id) = &r.media_id {
+                            delete_partial_media(&[&opts.dir, opts.work_dir()], media_id);
+                        }
                     }
                 }
                 Some(entry) => {
                     entry.speed = 0.0;
                     entry.connections = 0;
+                    entry.stage = None;
                     match result {
                         Ok(path) => {
                             entry.status = Status::Completed;
-                            if let Some(total) = entry.total {
+                            if entry.kind == Kind::Media {
+                                // The size of the merged or converted file.
+                                if let Ok(meta) = std::fs::metadata(&path) {
+                                    entry.downloaded = meta.len();
+                                    entry.total = Some(meta.len());
+                                }
+                                entry.filename = path.file_name().map(|n| n.to_string_lossy().to_string());
+                            } else if let Some(total) = entry.total {
                                 entry.downloaded = total;
                             }
                             entry.path = Some(path);
@@ -404,6 +498,9 @@ fn delete_entry_files(entry: &Entry, temp_dir: Option<&Path>) {
     }
     if let Some(name) = &entry.filename {
         delete_part_files(temp_dir.unwrap_or(&entry.dir), name);
+    }
+    if let Some(media_id) = &entry.media_id {
+        delete_partial_media(&[&entry.dir, temp_dir.unwrap_or(&entry.dir)], media_id);
     }
 }
 

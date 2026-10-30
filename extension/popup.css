@@ -37,3 +37,23 @@ h1 { font-size: 14px; margin: 0; }
   background: var(--accent); color: #fff; font: inherit; font-weight: 600;
 }
 .btn:disabled { opacity: .5; cursor: default; }
+.btn.small { width: auto; height: 28px; padding: 0 12px; flex: none; }
+.muted { color: var(--muted); }
+h2 { font-size: 12px; margin: 14px 0 6px; color: var(--muted); font-weight: 600; }
+.card {
+  display: flex; align-items: center; gap: 10px; margin-top: 10px;
+  padding: 10px; border: 1px solid var(--border); border-radius: 8px;
+}
+.card-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.card-text .muted { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#media-list { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+#media-list li { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-top: 1px solid var(--border); }
+#media-list li:first-child { border-top: 0; }
+.kind { flex: none; width: 44px; text-align: center; font-size: 10px; font-weight: 700; padding: 2px 0; border-radius: 4px; color: #fff; background: #db2777; }
+.kind.Audio { background: #9333ea; }
+.kind.HLS, .kind.DASH { background: #0891b2; }
+.item-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.item-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item-size { font-size: 11px; color: var(--muted); }
+.icon-btn { flex: none; width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--accent); cursor: pointer; font-size: 15px; }
+.icon-btn:hover { background: var(--border); }
