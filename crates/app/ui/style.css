@@ -103,6 +103,11 @@ dialog .btn:not(.primary):not(.danger) { border-color: var(--border); background
 }
 .filter:hover { background: var(--hover); }
 .filter.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.sidebar-heading {
+  margin: 12px 10px 4px; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+}
+.sidebar { overflow-y: auto; }
 .filter .count { margin-left: auto; color: var(--muted); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
 
 /* Table */
@@ -189,6 +194,28 @@ kbd {
   background: var(--surface); border-top: 1px solid var(--border);
 }
 .status-speed { font-variant-numeric: tabular-nums; }
+.status-right { display: flex; gap: 14px; }
+#btn-limit.on { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
+#btn-scheduler.on { color: var(--accent); background: var(--accent-soft); }
+.field.inline-field { flex-direction: row; align-items: center; justify-content: space-between; }
+.toggle-row { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.inline-check { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12px; cursor: pointer; }
+.field .inline-check input { margin: 0; width: auto; padding: 0; }
+.field .inline-check { align-self: flex-start; }
+.days { display: flex; gap: 6px; flex-wrap: wrap; }
+.days label { cursor: pointer; }
+.days input { position: absolute; opacity: 0; }
+.days span {
+  display: inline-block; min-width: 46px; text-align: center; padding: 6px 0; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg); font-size: 12px;
+}
+.days input:checked + span { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+.days input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 1px; }
+.sch-now {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+}
+tr[data-status="scheduled"] .dot { background: var(--accent); opacity: .5; }
 
 /* Dialogs */
 dialog {
@@ -284,10 +311,15 @@ select {
   background: var(--text); color: var(--bg); box-shadow: var(--shadow);
 }
 
+@media (max-width: 1150px) {
+  #btn-resume-all, #btn-pause-all { display: none; }
+}
+
 @media (max-width: 900px) {
   .toolbar .btn span { display: none; }
   #btn-resume-all, #btn-pause-all { display: none; }
   .sidebar { width: 56px; }
   .filter span:not(.count) { display: none; }
   .filter .count { display: none; }
+  .sidebar-heading { display: none; }
 }

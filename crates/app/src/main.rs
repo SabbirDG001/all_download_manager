@@ -100,6 +100,62 @@ async fn install_tool(app: AppHandle, name: String) -> CmdResult<()> {
     result.map(|_| ()).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn add_to_schedule(manager: State<Manager>, ids: Vec<u64>) {
+    manager.add_to_schedule(&ids);
+}
+
+/// Starts (or stops) the scheduler's downloads now, without waiting for the time window.
+#[tauri::command]
+fn set_schedule_running(manager: State<Manager>, running: bool) {
+    manager.set_schedule_active(running);
+}
+
+#[tauri::command]
+fn schedule_running(manager: State<Manager>) -> bool {
+    manager.schedule_active()
+}
+
+/// Puts the computer to sleep or shuts it down.
+#[tauri::command]
+fn power_action(action: String) -> CmdResult<()> {
+    let (program, args): (&str, &[&str]) = match (action.as_str(), cfg!(windows)) {
+        ("shutdown", true) => ("shutdown", &["/s", "/t", "0"]),
+        ("sleep", true) => ("rundll32.exe", &["powrprof.dll,SetSuspendState", "0,1,0"]),
+        ("shutdown", false) => ("systemctl", &["poweroff"]),
+        ("sleep", false) => ("systemctl", &["suspend"]),
+        _ => return Err(format!("unknown action '{action}'")),
+    };
+    let mut cmd = std::process::Command::new(program);
+    cmd.args(args);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd.spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// Opens and closes the scheduler's time window as the clock passes it.
+async fn run_scheduler_clock(manager: Manager) {
+    use chrono::{Datelike, Timelike};
+    let mut was_open = false;
+    loop {
+        let schedule = manager.settings().schedule;
+        let now = chrono::Local::now();
+        let open = schedule.is_open(now.weekday().num_days_from_monday() as usize, now.hour() * 60 + now.minute());
+        if open && !was_open {
+            manager.set_schedule_active(true);
+        } else if !open && was_open && schedule.stop.is_some() {
+            // Without a stop time, downloads carry on until they're done.
+            manager.set_schedule_active(false);
+        }
+        was_open = open;
+        tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+    }
+}
+
 /// Lists the video and audio qualities a page offers.
 #[tauri::command]
 async fn get_media_formats(url: String, headers: Vec<(String, String)>) -> CmdResult<MediaInfo> {
@@ -265,8 +321,9 @@ fn main() {
                     let _ = handle.emit("downloads", change);
                 },
             );
-            app.manage(manager);
+            app.manage(manager.clone());
             app.manage(PendingFromBrowser::default());
+            tauri::async_runtime::spawn(run_scheduler_clock(manager));
 
             if let Err(e) = bridge::register() {
                 eprintln!("couldn't register with the browsers: {e}");
@@ -300,6 +357,10 @@ fn main() {
             install_tool,
             looks_like_media,
             get_media_formats,
+            add_to_schedule,
+            set_schedule_running,
+            schedule_running,
+            power_action,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start All Download Manager");

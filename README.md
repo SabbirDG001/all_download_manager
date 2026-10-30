@@ -11,7 +11,7 @@ Manager, with a browser extension for Chrome and Brave.
 | 2 | Desktop app (`crates/app`, Tauri) with download list, queue, settings, installer | done |
 | 3 | Chrome / Brave / Edge extension (`extension/`) + Native Messaging bridge | done |
 | 4 | Video and audio: yt-dlp + ffmpeg, media detection in the browser | done |
-| 5 | Scheduler, categories, speed limit | next |
+| 5 | Scheduler, categories, speed limit | done |
 
 ## Getting the Windows app
 
@@ -43,6 +43,26 @@ The app uses Microsoft Edge WebView2, which Windows 10 and 11 already have.
   downloads at the same time, user agent.
 - Follows the Windows light or dark theme.
 - Keyboard: Ctrl+N add, Delete delete, Ctrl+A select all, Enter open, Esc deselect.
+
+## Speed limit, categories and scheduler
+
+- **Speed limit:** the **No limit / Limit** button in the toolbar turns it on
+  and off; the speed (KB/s) is set in Settings. It is shared by all
+  downloads and changes running downloads straight away (video downloads
+  pick up a new limit when they next start).
+- **Categories:** the sidebar groups downloads by type: Video, Music,
+  Documents, Compressed, Programs, Images and Other. Turn on **Sort finished
+  downloads into folders by type** in Settings to save them in matching
+  subfolders of the download folder (`Downloads\Video`, `Downloads\Music`…).
+  Downloads saved to a folder you picked yourself are left where you put them.
+- **Scheduler:** add downloads to the scheduler from the Add dialog
+  ("When: Add to the scheduler") or by right-clicking them. In
+  **Scheduler**, choose the start time, an optional stop time (windows past
+  midnight work, such as 23:00–07:00) and the days. At the start time the
+  scheduled downloads begin; at the stop time they pause until the next
+  window. **Start now** runs them at once. When they are all done, the
+  computer can **sleep** or **shut down**, after a 60-second warning you can
+  cancel.
 
 ## Video and audio
 
@@ -197,7 +217,8 @@ cargo test
 
 The tests run against a small local HTTP server and check segmented downloads,
 the single-connection fallback, not overwriting files, resuming after a pause,
-and the download list (queue limit, pause/resume, delete, surviving a restart).
+and the download list (queue limit, pause/resume, delete, surviving a restart,
+speed limit, sorting into folders, and the scheduler's time windows).
 If yt-dlp and ffmpeg are on `PATH`, a test also downloads a local HLS stream
 and extracts MP3 audio with them. `cargo test -- --ignored` additionally
 installs yt-dlp from GitHub.

@@ -95,6 +95,8 @@ pub struct MediaJob {
     pub temp_dir: Option<PathBuf>,
     pub format: MediaFormat,
     pub headers: Vec<(String, String)>,
+    /// Speed limit in bytes per second.
+    pub rate_limit: Option<u64>,
     /// Page title from the browser. Used to name bare streams (HLS/DASH
     /// playlists), which have no title of their own.
     pub title_hint: Option<String>,
@@ -168,6 +170,10 @@ pub fn yt_dlp_args(job: &MediaJob, ffmpeg: Option<&Path>) -> Vec<String> {
         push("--ffmpeg-location", ffmpeg.display().to_string());
     }
     args.extend(format_args(job.format, ffmpeg.is_some()));
+    if let Some(limit) = job.rate_limit.filter(|l| *l > 0) {
+        args.push("--limit-rate".into());
+        args.push(limit.to_string());
+    }
     args.extend(header_args(&job.headers));
     args.push("--".into());
     args.push(job.url.clone());
@@ -574,6 +580,7 @@ mod tests {
             format: quality.into(),
             headers: vec![("Cookie".into(), "a=b".into()), ("Referer".into(), "https://r/".into())],
             title_hint: Some("Page: 100% \"live\"".into()),
+            rate_limit: None,
         }
     }
 

@@ -13,6 +13,7 @@ use tokio_util::sync::CancellationToken;
 use crate::download::{download_with_events, part_paths, DownloadOptions, Event};
 use crate::media::{delete_partial_media, download_media, MediaFormat, MediaJob};
 use crate::tools::find_tools;
+use crate::limit::RateLimiter;
 use crate::{Error, Quality, Settings, SpeedMeter};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -23,6 +24,8 @@ pub enum Status {
     Paused,
     Completed,
     Failed,
+    /// Waiting for the scheduler's time window.
+    Scheduled,
 }
 
 /// How a download is fetched.
@@ -61,6 +64,12 @@ pub struct Entry {
     pub headers: Vec<(String, String)>,
     #[serde(default)]
     pub kind: Kind,
+    /// Belongs to the scheduler: it runs only while the schedule is active.
+    #[serde(default)]
+    pub in_schedule: bool,
+    /// The folder wasn't chosen by the user, so it may be sorted by type.
+    #[serde(default)]
+    pub auto_dir: bool,
     /// Video/audio downloads: chosen quality (older lists only have this).
     #[serde(default)]
     pub quality: Quality,
@@ -103,6 +112,8 @@ pub struct AddRequest {
     pub format: Option<MediaFormat>,
     /// Title of the page the link came from, shown until the real one is known.
     pub title: Option<String>,
+    /// Add it to the scheduler instead of starting it.
+    pub scheduled: bool,
 }
 
 /// What the list's listeners are told.
@@ -113,6 +124,8 @@ pub enum Change {
     List(Vec<Entry>),
     /// Progress of one download.
     Updated(Box<Entry>),
+    /// The scheduled downloads are finished; time for the "when done" action.
+    ScheduleDone,
 }
 
 type Listener = dyn Fn(Change) + Send + Sync;
@@ -137,6 +150,11 @@ struct Inner {
     settings: Settings,
     /// Where yt-dlp and ffmpeg are installed.
     tools_dir: PathBuf,
+    limiter: Arc<RateLimiter>,
+    /// Scheduled downloads may run now.
+    schedule_active: bool,
+    /// A scheduled download started during this active period.
+    schedule_ran: bool,
 }
 
 struct Running {
@@ -169,6 +187,7 @@ impl Manager {
             }
         }
         let next_id = entries.iter().map(|e| e.id).max().unwrap_or(0) + 1;
+        let limiter = Arc::new(RateLimiter::new(settings.speed_limit_bytes()));
 
         let manager = Self {
             shared: Arc::new(Shared {
@@ -178,6 +197,9 @@ impl Manager {
                     running: HashMap::new(),
                     settings,
                     tools_dir: Settings::tools_dir(),
+                    limiter,
+                    schedule_active: false,
+                    schedule_ran: false,
                 }),
                 listener: Box::new(listener),
                 runtime,
@@ -201,9 +223,11 @@ impl Manager {
         self.shared.inner.lock().unwrap().tools_dir = dir;
     }
 
-    /// Uses new settings for downloads started from now on.
+    /// Uses new settings for downloads started from now on. The speed limit
+    /// also applies to running downloads at once.
     pub fn set_settings(&self, settings: Settings) {
         self.changed(|inner| {
+            inner.limiter.set(settings.speed_limit_bytes());
             inner.settings = settings;
             self.schedule(inner);
         });
@@ -224,7 +248,15 @@ impl Manager {
                 url,
                 filename: req.filename.filter(|f| !f.trim().is_empty()),
                 dir: req.dir.clone().unwrap_or_else(|| inner.settings.download_dir.clone()),
-                status: if req.paused { Status::Paused } else { Status::Queued },
+                status: if req.scheduled {
+                    Status::Scheduled
+                } else if req.paused {
+                    Status::Paused
+                } else {
+                    Status::Queued
+                },
+                in_schedule: req.scheduled,
+                auto_dir: req.dir.is_none(),
                 downloaded: 0,
                 total: None,
                 resumable: false,
@@ -253,8 +285,9 @@ impl Manager {
         self.changed(|inner| {
             for &id in ids {
                 let Some(e) = inner.entries.iter_mut().find(|e| e.id == id) else { continue };
-                if matches!(e.status, Status::Queued | Status::Downloading) {
+                if matches!(e.status, Status::Queued | Status::Downloading | Status::Scheduled) {
                     e.status = Status::Paused;
+                    e.in_schedule = false;
                     e.speed = 0.0;
                     e.connections = 0;
                 }
@@ -270,8 +303,9 @@ impl Manager {
     pub fn resume(&self, ids: &[u64]) {
         self.changed(|inner| {
             for e in inner.entries.iter_mut().filter(|e| ids.contains(&e.id)) {
-                if matches!(e.status, Status::Paused | Status::Failed) {
+                if matches!(e.status, Status::Paused | Status::Failed | Status::Scheduled) {
                     e.status = Status::Queued;
+                    e.in_schedule = false;
                     e.error = None;
                 }
             }
@@ -279,9 +313,65 @@ impl Manager {
         });
     }
 
+    /// Pauses everything that is running or waiting (the scheduler's
+    /// downloads stay with the scheduler).
     pub fn pause_all(&self) {
-        let ids: Vec<u64> = self.entries().iter().map(|e| e.id).collect();
+        let ids: Vec<u64> = self
+            .entries()
+            .iter()
+            .filter(|e| matches!(e.status, Status::Queued | Status::Downloading) && !e.in_schedule)
+            .map(|e| e.id)
+            .collect();
         self.pause(&ids);
+    }
+
+    /// Hands downloads to the scheduler. Running ones stop until it's time.
+    pub fn add_to_schedule(&self, ids: &[u64]) {
+        self.changed(|inner| {
+            let active = inner.schedule_active;
+            for e in inner.entries.iter_mut().filter(|e| ids.contains(&e.id)) {
+                if e.status == Status::Completed {
+                    continue;
+                }
+                e.in_schedule = true;
+                e.error = None;
+                if e.status == Status::Downloading && active {
+                    continue;
+                }
+                e.status = Status::Scheduled;
+                e.speed = 0.0;
+                if let Some(r) = inner.running.get(&e.id) {
+                    r.cancel.cancel();
+                }
+            }
+            self.schedule(inner);
+        });
+    }
+
+    /// Lets the scheduler's downloads run (`true`) or stops them (`false`).
+    pub fn set_schedule_active(&self, active: bool) {
+        self.changed(|inner| {
+            if inner.schedule_active == active {
+                return;
+            }
+            inner.schedule_active = active;
+            inner.schedule_ran = false;
+            if !active {
+                let Inner { entries, running, .. } = &mut *inner;
+                for e in entries.iter_mut().filter(|e| e.in_schedule && e.status == Status::Downloading) {
+                    e.status = Status::Scheduled;
+                    e.speed = 0.0;
+                    if let Some(r) = running.get(&e.id) {
+                        r.cancel.cancel();
+                    }
+                }
+            }
+            self.schedule(inner);
+        });
+    }
+
+    pub fn schedule_active(&self) -> bool {
+        self.shared.inner.lock().unwrap().schedule_active
     }
 
     pub fn resume_all(&self) {
@@ -315,13 +405,34 @@ impl Manager {
 
     /// Runs `f` on the list, then saves it and tells the listener.
     fn changed(&self, f: impl FnOnce(&mut Inner)) {
-        let snapshot = {
+        let (snapshot, schedule_done) = {
             let mut inner = self.shared.inner.lock().unwrap();
             f(&mut inner);
-            inner.entries.clone()
+            let done = self.check_schedule_done(&mut inner);
+            (inner.entries.clone(), done)
         };
         self.save(&snapshot);
         (self.shared.listener)(Change::List(snapshot));
+        if schedule_done {
+            (self.shared.listener)(Change::ScheduleDone);
+        }
+    }
+
+    /// Ends the active period once the scheduler's downloads are all done.
+    /// Returns whether something ran, so the "when done" action applies.
+    fn check_schedule_done(&self, inner: &mut Inner) -> bool {
+        if !inner.schedule_active {
+            return false;
+        }
+        let waiting = inner
+            .entries
+            .iter()
+            .any(|e| e.in_schedule && matches!(e.status, Status::Scheduled | Status::Downloading));
+        if waiting {
+            return false;
+        }
+        inner.schedule_active = false;
+        std::mem::take(&mut inner.schedule_ran)
     }
 
     fn save(&self, entries: &[Entry]) {
@@ -342,7 +453,10 @@ impl Manager {
             let next = inner
                 .entries
                 .iter()
-                .find(|e| e.status == Status::Queued && !inner.running.contains_key(&e.id))
+                .find(|e| {
+                    let ready = e.status == Status::Queued || (e.status == Status::Scheduled && inner.schedule_active);
+                    ready && !inner.running.contains_key(&e.id)
+                })
                 .map(|e| e.id);
             match next {
                 Some(id) => self.start(inner, id),
@@ -354,7 +468,11 @@ impl Manager {
     fn start(&self, inner: &mut Inner, id: u64) {
         let settings = inner.settings.clone();
         let tools_dir = inner.tools_dir.clone();
+        let limiter = inner.limiter.clone();
         let Some(entry) = inner.entries.iter_mut().find(|e| e.id == id) else { return };
+        if entry.in_schedule {
+            inner.schedule_ran = true;
+        }
         entry.status = Status::Downloading;
         entry.error = None;
         entry.stage = None;
@@ -366,6 +484,8 @@ impl Manager {
             connections: settings.connections,
             headers: entry.headers.clone(),
             user_agent: settings.user_agent.clone(),
+            limiter: Some(limiter),
+            sort_into_folders: settings.sort_into_folders && entry.auto_dir,
             ..Default::default()
         };
         let url = entry.url.clone();
@@ -383,13 +503,19 @@ impl Manager {
 
         let this = self.clone();
         if entry.kind == Kind::Media {
+            let format = entry.format.unwrap_or_else(|| entry.quality.into());
+            let mut dir = opts.dir.clone();
+            if opts.sort_into_folders {
+                dir.push(if format.is_audio() { "Music" } else { "Video" });
+            }
             let job = MediaJob {
                 url,
-                dir: opts.dir.clone(),
+                dir,
                 temp_dir: opts.temp_dir.clone(),
-                format: entry.format.unwrap_or_else(|| entry.quality.into()),
+                format,
                 headers: opts.headers.clone(),
                 title_hint: entry.title.clone(),
+                rate_limit: Some(settings.speed_limit_bytes()),
             };
             self.shared.runtime.spawn(async move {
                 let tools = find_tools(&tools_dir);

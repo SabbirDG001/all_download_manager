@@ -40,6 +40,7 @@ name = "all-download-manager"
 version = "0.1.0"
 dependencies = [
  "adm-engine",
+ "chrono",
  "dirs 6.0.0",
  "serde",
  "serde_json",

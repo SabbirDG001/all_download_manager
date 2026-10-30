@@ -18,6 +18,15 @@
     <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v12M6 11l6 6 6-6M5 20h14"/></symbol>
     <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
     <symbol id="i-broom" viewBox="0 0 24 24"><path d="M4 20l7-7M14 4l6 6-6 6-6-6z"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+    <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4 18a9 9 0 1 1 16 0"/><path d="M12 14l4-5"/></symbol>
+    <symbol id="i-video" viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/></symbol>
+    <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></symbol>
+    <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h6"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v8"/></symbol>
+    <symbol id="i-app" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 6.5h.01"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></symbol>
   </svg>
 
   <header class="toolbar">
@@ -41,6 +50,12 @@
       <svg class="icon"><use href="#i-broom"/></svg><span>Clear finished</span>
     </button>
     <div class="spacer"></div>
+    <button id="btn-limit" class="btn" title="Turn the speed limit on or off (set the speed in Settings)">
+      <svg class="icon"><use href="#i-gauge"/></svg><span id="limit-label">No limit</span>
+    </button>
+    <button id="btn-scheduler" class="btn" title="Scheduler">
+      <svg class="icon"><use href="#i-calendar"/></svg><span>Scheduler</span>
+    </button>
     <button id="btn-settings" class="btn" title="Settings">
       <svg class="icon"><use href="#i-gear"/></svg><span>Settings</span>
     </button>
@@ -60,6 +75,17 @@
       <button class="filter" data-filter="completed">
         <svg class="icon"><use href="#i-check"/></svg><span>Finished</span><span class="count" data-count="completed"></span>
       </button>
+      <button class="filter" data-filter="scheduled">
+        <svg class="icon"><use href="#i-calendar"/></svg><span>Scheduled</span><span class="count" data-count="scheduled"></span>
+      </button>
+      <div class="sidebar-heading">Categories</div>
+      <button class="filter" data-filter="cat:video"><svg class="icon"><use href="#i-video"/></svg><span>Video</span><span class="count" data-count="cat:video"></span></button>
+      <button class="filter" data-filter="cat:music"><svg class="icon"><use href="#i-music"/></svg><span>Music</span><span class="count" data-count="cat:music"></span></button>
+      <button class="filter" data-filter="cat:documents"><svg class="icon"><use href="#i-doc"/></svg><span>Documents</span><span class="count" data-count="cat:documents"></span></button>
+      <button class="filter" data-filter="cat:compressed"><svg class="icon"><use href="#i-box"/></svg><span>Compressed</span><span class="count" data-count="cat:compressed"></span></button>
+      <button class="filter" data-filter="cat:programs"><svg class="icon"><use href="#i-app"/></svg><span>Programs</span><span class="count" data-count="cat:programs"></span></button>
+      <button class="filter" data-filter="cat:images"><svg class="icon"><use href="#i-image"/></svg><span>Images</span><span class="count" data-count="cat:images"></span></button>
+      <button class="filter" data-filter="cat:other"><svg class="icon"><use href="#i-file"/></svg><span>Other</span><span class="count" data-count="cat:other"></span></button>
     </nav>
 
     <main class="list" id="list">
@@ -86,7 +112,11 @@
 
   <footer class="statusbar">
     <span id="status-text"></span>
-    <span id="status-speed" class="status-speed"></span>
+    <span class="status-right">
+      <span id="status-schedule"></span>
+      <span id="status-limit"></span>
+      <span id="status-speed" class="status-speed"></span>
+    </span>
   </footer>
 
   <!-- Add downloads -->
@@ -134,7 +164,14 @@
         </div>
       </div>
       <p id="add-tools-warning" class="warning small" hidden>yt-dlp isn't installed yet. Install it in <a href="#" id="add-open-settings">Settings</a>.</p>
-      <label class="check"><input id="add-start" type="checkbox" checked> Start now</label>
+      <label class="field inline-field">
+        <span>When</span>
+        <select id="add-when">
+          <option value="now">Start now</option>
+          <option value="schedule">Add to the scheduler</option>
+          <option value="paused">Add paused</option>
+        </select>
+      </label>
       <div class="actions">
         <button type="button" class="btn" data-close>Cancel</button>
         <button type="submit" class="btn primary" value="ok">Download</button>
@@ -174,6 +211,14 @@
           <button type="button" class="btn" id="set-temp-clear" title="Use the download folder">Clear</button>
         </div>
       </label>
+      <label class="check"><input id="set-sort" type="checkbox"> Sort finished downloads into folders by type <small class="muted">(Video, Music, Documents…)</small></label>
+      <div class="grid2">
+        <label class="field">
+          <span>Speed limit <small>(KB/s, when turned on in the toolbar)</small></span>
+          <input id="set-limit" type="number" min="1" step="1" required>
+        </label>
+        <div></div>
+      </div>
       <div class="grid2">
         <label class="field">
           <span>Connections per download</span>
@@ -226,12 +271,66 @@
     </form>
   </dialog>
 
+  <!-- Scheduler -->
+  <dialog id="dlg-scheduler">
+    <form method="dialog" id="form-scheduler">
+      <h2>Scheduler</h2>
+      <p class="muted small">Downloads added "to the scheduler" wait for this time window. Right-click a download to add it.</p>
+      <label class="toggle-row"><input id="sch-enabled" type="checkbox"> <b>Run scheduled downloads automatically</b></label>
+      <div class="grid2">
+        <label class="field"><span>Start at</span><input id="sch-start" type="time" required></label>
+        <div class="field">
+          <label class="inline-check"><input id="sch-has-stop" type="checkbox"> Stop at</label>
+          <input id="sch-stop" type="time" aria-label="Stop at">
+        </div>
+      </div>
+      <div class="field">
+        <span>On these days</span>
+        <div class="days" id="sch-days">
+          <label><input type="checkbox"><span>Mon</span></label><label><input type="checkbox"><span>Tue</span></label>
+          <label><input type="checkbox"><span>Wed</span></label><label><input type="checkbox"><span>Thu</span></label>
+          <label><input type="checkbox"><span>Fri</span></label><label><input type="checkbox"><span>Sat</span></label>
+          <label><input type="checkbox"><span>Sun</span></label>
+        </div>
+      </div>
+      <label class="field inline-field">
+        <span>When they're done</span>
+        <select id="sch-when-done">
+          <option value="nothing">Do nothing</option>
+          <option value="sleep">Put the computer to sleep</option>
+          <option value="shutdown">Shut down the computer</option>
+        </select>
+      </label>
+      <div class="sch-now">
+        <span id="sch-summary" class="muted small"></span>
+        <button type="button" class="btn" id="sch-run">Start now</button>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn" data-close>Cancel</button>
+        <button type="submit" class="btn primary" value="ok">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Countdown before sleep / shutdown -->
+  <dialog id="dlg-countdown">
+    <form method="dialog" id="form-countdown">
+      <h2 id="countdown-title">Scheduled downloads are done</h2>
+      <p id="countdown-text"></p>
+      <div class="actions">
+        <button type="button" class="btn" id="countdown-cancel">Cancel</button>
+        <button type="submit" class="btn danger" id="countdown-now" value="ok">Now</button>
+      </div>
+    </form>
+  </dialog>
+
   <div id="menu" class="menu" role="menu" hidden>
     <button data-action="open">Open</button>
     <button data-action="folder">Show in folder</button>
     <hr>
     <button data-action="resume">Resume</button>
     <button data-action="pause">Pause</button>
+    <button data-action="schedule">Add to the scheduler</button>
     <button data-action="copy">Copy link</button>
     <hr>
     <button data-action="delete" class="danger-text">Delete…</button>

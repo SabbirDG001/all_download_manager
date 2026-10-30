@@ -11,7 +11,9 @@ use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
+use crate::category::Category;
 use crate::filename::sanitize_filename;
+use crate::limit::RateLimiter;
 use crate::probe::probe;
 use crate::state::{split_into_segments, DownloadState};
 use crate::{Error, Result};
@@ -39,6 +41,10 @@ pub struct DownloadOptions {
     pub user_agent: Option<String>,
     /// Retries per segment for network errors.
     pub max_retries: u32,
+    /// Shared speed limit.
+    pub limiter: Option<Arc<RateLimiter>>,
+    /// Put the finished file in a subfolder for its type (Video, Music…).
+    pub sort_into_folders: bool,
 }
 
 impl Default for DownloadOptions {
@@ -52,6 +58,8 @@ impl Default for DownloadOptions {
             headers: Vec::new(),
             user_agent: None,
             max_retries: 5,
+            limiter: None,
+            sort_into_folders: false,
         }
     }
 }
@@ -193,7 +201,7 @@ where
             // The server can't do ranges (or the file is empty): one connection,
             // starting from scratch.
             let reporter = Reporter::start(counters.clone(), info.size, on_progress.clone(), None);
-            let result = run_single(&client, url, &part, &counters, &cancel).await;
+            let result = run_single(&client, url, &part, &counters, opts.limiter.as_deref(), &cancel).await;
             reporter.stop().await;
             on_progress(progress(&counters, info.size));
             result?;
@@ -206,7 +214,14 @@ where
         }
     }
 
-    let target = unique_path(&opts.dir, &name);
+    let mut final_dir = opts.dir.clone();
+    if opts.sort_into_folders {
+        if let Some(folder) = Category::of(&name).folder() {
+            final_dir.push(folder);
+            tokio::fs::create_dir_all(&final_dir).await?;
+        }
+    }
+    let target = unique_path(&final_dir, &name);
     move_file(&part, &target).await?;
     let _ = tokio::fs::remove_file(&meta).await;
     Ok(target)
@@ -266,6 +281,7 @@ async fn run_segmented(
             cancel: cancel.clone(),
             min_split: opts.min_split_size,
             max_retries: opts.max_retries,
+            limiter: opts.limiter.clone(),
         };
         workers.spawn(conn.run());
     }
@@ -292,6 +308,7 @@ struct Connection {
     cancel: CancellationToken,
     min_split: u64,
     max_retries: u32,
+    limiter: Option<Arc<RateLimiter>>,
 }
 
 impl Connection {
@@ -380,6 +397,9 @@ impl Connection {
             };
             let finished = match chunk {
                 Some(Ok(bytes)) => {
+                    if let Some(limiter) = &self.limiter {
+                        limiter.take(bytes.len()).await;
+                    }
                     buffer.extend_from_slice(&bytes);
                     false
                 }
@@ -445,6 +465,7 @@ async fn run_single(
     url: &str,
     part: &Path,
     counters: &Counters,
+    limiter: Option<&RateLimiter>,
     cancel: &CancellationToken,
 ) -> Result<()> {
     let resp = client.get(url).send().await?;
@@ -461,6 +482,9 @@ async fn run_single(
         };
         let Some(chunk) = chunk else { break };
         let chunk = chunk?;
+        if let Some(limiter) = limiter {
+            limiter.take(chunk.len()).await;
+        }
         file.write_all(&chunk).await?;
         counters.downloaded.fetch_add(chunk.len() as u64, Ordering::Relaxed);
     }

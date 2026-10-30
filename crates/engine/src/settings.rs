@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Error, Quality, Result};
+use crate::{Error, Quality, Result, Schedule};
 
 const FILE_NAME: &str = "settings.json";
 
@@ -31,6 +31,12 @@ pub struct Settings {
     pub confirm_browser_downloads: bool,
     /// Default quality for video and audio downloads.
     pub video_quality: Quality,
+    /// Speed limit in KB/s, used while `speed_limit_on` is set.
+    pub speed_limit_kbps: u64,
+    pub speed_limit_on: bool,
+    /// Save finished downloads in subfolders by type (Video, Music…).
+    pub sort_into_folders: bool,
+    pub schedule: Schedule,
 }
 
 impl Default for Settings {
@@ -46,6 +52,10 @@ impl Default for Settings {
             user_agent: None,
             confirm_browser_downloads: true,
             video_quality: Quality::Best,
+            speed_limit_kbps: 1024,
+            speed_limit_on: false,
+            sort_into_folders: false,
+            schedule: Schedule::default(),
         }
     }
 }
@@ -62,6 +72,15 @@ impl Settings {
     /// Whether settings are kept next to the program (portable mode).
     pub fn is_portable() -> bool {
         portable_dir().is_some()
+    }
+
+    /// The speed limit in bytes per second, or 0 when it's off.
+    pub fn speed_limit_bytes(&self) -> u64 {
+        if self.speed_limit_on {
+            self.speed_limit_kbps.saturating_mul(1024)
+        } else {
+            0
+        }
     }
 
     /// Folder for yt-dlp and ffmpeg.
@@ -106,6 +125,10 @@ impl Settings {
         if self.download_dir.as_os_str().is_empty() {
             return Err(Error::Settings("choose a download folder".into()));
         }
+        if self.speed_limit_kbps == 0 {
+            return Err(Error::Settings("the speed limit must be at least 1 KB/s".into()));
+        }
+        self.schedule.validate().map_err(Error::Settings)?;
         Ok(())
     }
 }

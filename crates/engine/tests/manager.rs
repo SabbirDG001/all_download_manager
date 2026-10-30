@@ -133,3 +133,108 @@ async fn rejects_bad_links() {
     assert!(m.add(AddRequest { url: "ftp://x/y".into(), ..Default::default() }).is_err());
     assert!(m.entries().is_empty());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn speed_limit_slows_downloads_and_can_change_live() {
+    let body = test_body(600_000);
+    let server = serve(body.clone(), true, Duration::ZERO).await;
+    let dir = temp_dir("mgr-limit");
+    let settings = Settings {
+        download_dir: dir.clone(),
+        speed_limit_kbps: 200,
+        speed_limit_on: true,
+        ..Default::default()
+    };
+    let m = Manager::new(settings.clone(), dir.join("list.json"), Handle::current(), |_| {});
+
+    let started = std::time::Instant::now();
+    add(&m, &server.url, "slow.bin");
+    // 600 KB at 200 KB/s takes about 3 s; check it isn't done after 1.5 s.
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let e = &m.entries()[0];
+    assert_eq!(e.status, Status::Downloading, "finished too fast for the limit");
+    assert!(e.downloaded < 500_000, "{}", e.downloaded);
+
+    // Turning the limit off lets the running download finish right away.
+    m.set_settings(Settings { speed_limit_on: false, ..settings });
+    wait_for(&m, "done", |es| es[0].status == Status::Completed).await;
+    assert!(started.elapsed() < Duration::from_millis(2900));
+    assert_eq!(std::fs::read(dir.join("slow.bin")).unwrap(), *body);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sorts_into_folders_by_type() {
+    let body = test_body(10_000);
+    let server = serve(body, true, Duration::ZERO).await;
+    let dir = temp_dir("mgr-sort");
+    let settings = Settings { download_dir: dir.clone(), sort_into_folders: true, ..Default::default() };
+    let m = Manager::new(settings, dir.join("list.json"), Handle::current(), |_| {});
+
+    add(&m, &server.url, "movie.mp4");
+    add(&m, &server.url, "notes.unknown");
+    // A folder the user picked is used as is.
+    let picked = dir.join("picked");
+    m.add(AddRequest { url: server.url.clone(), filename: Some("x.zip".into()), dir: Some(picked.clone()), ..Default::default() })
+        .unwrap();
+    wait_for(&m, "all done", |es| es.iter().all(|e| e.status == Status::Completed)).await;
+    assert!(dir.join("Video/movie.mp4").exists());
+    assert!(dir.join("notes.unknown").exists());
+    assert!(picked.join("x.zip").exists());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn scheduler_runs_its_downloads_only_when_active() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    let body = test_body(300_000);
+    let server = serve(body.clone(), true, Duration::from_millis(2)).await;
+    let dir = temp_dir("mgr-schedule");
+    let done_events = Arc::new(AtomicUsize::new(0));
+    let counter = done_events.clone();
+    let settings = Settings { download_dir: dir.clone(), ..Default::default() };
+    let m = Manager::new(settings, dir.join("list.json"), Handle::current(), move |c| {
+        if matches!(c, adm_engine::Change::ScheduleDone) {
+            counter.fetch_add(1, Ordering::SeqCst);
+        }
+    });
+
+    let req = |name: &str| AddRequest {
+        url: server.url.clone(),
+        filename: Some(name.into()),
+        scheduled: true,
+        ..Default::default()
+    };
+    let a = m.add(req("night1.bin")).unwrap();
+    let b = m.add(req("night2.bin")).unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(status(&m, a), Status::Scheduled);
+    assert_eq!(status(&m, b), Status::Scheduled);
+
+    // The window opens, then closes again before they finish.
+    m.set_schedule_active(true);
+    wait_for(&m, "started", |es| es.iter().all(|e| e.status == Status::Downloading)).await;
+    m.set_schedule_active(false);
+    assert_eq!(status(&m, a), Status::Scheduled);
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    assert_eq!(status(&m, a), Status::Scheduled, "stopped downloads go back to the scheduler");
+    assert_eq!(done_events.load(Ordering::SeqCst), 0);
+
+    // Next window: they resume and finish, and "when done" fires once.
+    m.set_schedule_active(true);
+    wait_for(&m, "finished", |es| es.iter().all(|e| e.status == Status::Completed)).await;
+    for _ in 0..100 {
+        if done_events.load(Ordering::SeqCst) > 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(done_events.load(Ordering::SeqCst), 1);
+    assert!(!m.schedule_active());
+    assert_eq!(std::fs::read(dir.join("night2.bin")).unwrap(), *body);
+
+    // An active window with nothing to do doesn't trigger "when done".
+    m.set_schedule_active(true);
+    assert!(!m.schedule_active());
+    assert_eq!(done_events.load(Ordering::SeqCst), 1);
+}

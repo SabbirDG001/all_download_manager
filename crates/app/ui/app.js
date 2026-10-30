@@ -75,18 +75,34 @@ function statusLabel(e) {
     case "paused": return "Paused";
     case "completed": return "Finished";
     case "failed": return "Failed";
+    case "scheduled": return "Scheduled";
   }
   return e.status;
 }
 
 // ---------- Filtering and ordering ----------
 
+const CATEGORY_OF_KIND = {
+  video: "video", audio: "music", document: "documents", archive: "compressed",
+  program: "programs", image: "images", other: "other",
+};
+
+function categoryOf(e) {
+  const ext = extOf(displayName(e));
+  if (!ext && e.kind === "media") return e.format?.type === "audio" || e.quality === "audio" ? "music" : "video";
+  return CATEGORY_OF_KIND[kindOf(ext)];
+}
+
 const FILTERS = {
   all: () => true,
   active: (e) => e.status === "downloading" || e.status === "queued",
   unfinished: (e) => e.status === "paused" || e.status === "failed",
   completed: (e) => e.status === "completed",
+  scheduled: (e) => e.status === "scheduled" || (e.inSchedule && e.status === "downloading"),
 };
+for (const cat of ["video", "music", "documents", "compressed", "programs", "images", "other"]) {
+  FILTERS[`cat:${cat}`] = (e) => categoryOf(e) === cat;
+}
 
 function visibleEntries() {
   return [...state.entries.values()]
@@ -185,6 +201,7 @@ function renderChrome() {
   if (queued) parts.push(`${queued} queued`);
   $("#status-text").textContent = parts.join(" · ") || `${all.length} download${all.length === 1 ? "" : "s"}`;
   $("#status-speed").textContent = speed > 0 ? `${fmtBytes(speed)}/s` : "";
+  renderLimitAndSchedule();
 
   const sel = selectedEntries();
   $("#btn-resume").disabled = !sel.some(canResume);
@@ -195,8 +212,8 @@ function renderChrome() {
   $("#btn-clear").disabled = !all.some((e) => e.status === "completed");
 }
 
-const canResume = (e) => e.status === "paused" || e.status === "failed";
-const canPause = (e) => e.status === "downloading" || e.status === "queued";
+const canResume = (e) => e.status === "paused" || e.status === "failed" || e.status === "scheduled";
+const canPause = (e) => e.status === "downloading" || e.status === "queued" || e.status === "scheduled";
 
 let chromeQueued = false;
 function scheduleChrome() {
@@ -335,7 +352,7 @@ async function openAdd(prefill = "", fromBrowser = null) {
   $("#add-urls").value = prefill;
   $("#add-dir").value = state.settings.download_dir;
   $("#add-name").value = fromBrowser?.filename || "";
-  $("#add-start").checked = true;
+  $("#add-when").value = "now";
   $("#add-media").checked = !!fromBrowser?.media;
   $("#add-quality").value = state.settings.video_quality || "best";
   mediaTouched = false;
@@ -519,14 +536,16 @@ $("#form-add").addEventListener("submit", async (ev) => {
   if (urls.length === 0) { toast("Paste a link that starts with http:// or https://"); return; }
   const dir = $("#add-dir").value.trim() || null;
   const filename = $("#add-name").value.trim() || null;
-  const paused = !$("#add-start").checked;
+  const when = $("#add-when").value;
+  const paused = when === "paused";
+  const scheduled = when === "schedule";
   const media = $("#add-media").checked;
   const quality = $("#add-quality").value;
   try {
     for (const url of urls) {
       await call("add", {
         request: {
-          url, dir, paused, media, quality, headers: addHeaders, title: addTitle,
+          url, dir, paused, scheduled, media, quality, headers: addHeaders, title: addTitle,
           format: media && urls.length === 1 && formatsFor === url ? chosenFormat : null,
           filename: urls.length === 1 && !media ? filename : null,
         },
@@ -556,6 +575,7 @@ $("#form-delete").addEventListener("submit", (ev) => {
 async function loadSettings() {
   const info = await call("get_settings");
   state.settings = info.settings;
+  renderLimitAndSchedule();
   return info;
 }
 
@@ -569,6 +589,8 @@ async function openSettings() {
   $("#set-user-agent").value = s.user_agent || "";
   $("#set-confirm-browser").checked = s.confirm_browser_downloads;
   $("#set-video-quality").value = s.video_quality || "best";
+  $("#set-sort").checked = s.sort_into_folders;
+  $("#set-limit").value = s.speed_limit_kbps;
   refreshTools();
   $("#set-info").textContent = info.portable
     ? `Portable mode: settings and the download list are kept next to the program, in ${info.path}`
@@ -641,6 +663,8 @@ $("#form-settings").addEventListener("submit", async (ev) => {
     user_agent: $("#set-user-agent").value.trim() || null,
     confirm_browser_downloads: $("#set-confirm-browser").checked,
     video_quality: $("#set-video-quality").value,
+    sort_into_folders: $("#set-sort").checked,
+    speed_limit_kbps: Number($("#set-limit").value),
   };
   try {
     await call("save_settings", { settings });
@@ -666,6 +690,7 @@ document.addEventListener("contextmenu", (ev) => {
   menu.querySelector('[data-action="folder"]').disabled = !done;
   menu.querySelector('[data-action="resume"]').disabled = !sel.some(canResume);
   menu.querySelector('[data-action="pause"]').disabled = !sel.some(canPause);
+  menu.querySelector('[data-action="schedule"]').disabled = !sel.some((e) => e.status !== "completed" && e.status !== "scheduled");
   menu.querySelector('[data-action="copy"]').disabled = !single;
   menu.hidden = false;
   const { innerWidth: w, innerHeight: h } = window;
@@ -688,6 +713,7 @@ menu.addEventListener("click", async (ev) => {
     case "folder": call("show_in_folder", { path: sel[0].path }); break;
     case "resume": call("resume", { ids: ids(sel) }); break;
     case "pause": call("pause", { ids: ids(sel) }); break;
+    case "schedule": call("add_to_schedule", { ids: ids(sel) }); break;
     case "copy":
       try { await navigator.clipboard.writeText(sel[0].url); toast("Link copied"); }
       catch { toast("Couldn't copy the link"); }
@@ -738,6 +764,137 @@ document.addEventListener("drop", (ev) => {
   if (urls.length && !dialogOpen()) openAdd(urls.join("\n"));
 });
 
+// ---------- Speed limit ----------
+
+function fmtLimit(kbps) {
+  return kbps >= 1024 ? `${(kbps / 1024).toFixed(kbps % 1024 ? 1 : 0)} MB/s` : `${kbps} KB/s`;
+}
+
+async function saveSettingsQuietly(changes) {
+  if (!state.settings) await loadSettings();
+  const settings = { ...state.settings, ...changes };
+  await call("save_settings", { settings });
+  state.settings = settings;
+  renderLimitAndSchedule();
+}
+
+$("#btn-limit").onclick = () =>
+  saveSettingsQuietly({ speed_limit_on: !state.settings?.speed_limit_on }).catch(() => {});
+
+// ---------- Scheduler ----------
+
+const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+let scheduleRunning = false;
+
+async function refreshScheduleRunning() {
+  scheduleRunning = await call("schedule_running").catch(() => false);
+  renderLimitAndSchedule();
+}
+
+function describeDays(days) {
+  if (days.every(Boolean)) return "every day";
+  if (days.slice(0, 5).every(Boolean) && !days[5] && !days[6]) return "on weekdays";
+  if (!days.slice(0, 5).some(Boolean) && days[5] && days[6]) return "at weekends";
+  return DAY_NAMES.filter((_, i) => days[i]).join(", ");
+}
+
+function renderLimitAndSchedule() {
+  const s = state.settings;
+  if (!s) return;
+  const limitOn = s.speed_limit_on;
+  $("#btn-limit").classList.toggle("on", limitOn);
+  $("#limit-label").textContent = limitOn ? `Limit ${fmtLimit(s.speed_limit_kbps)}` : "No limit";
+  $("#status-limit").textContent = limitOn ? `Speed limit ${fmtLimit(s.speed_limit_kbps)}` : "";
+
+  const sch = s.schedule;
+  $("#btn-scheduler").classList.toggle("on", sch.enabled || scheduleRunning);
+  $("#status-schedule").textContent = scheduleRunning
+    ? "Scheduler running"
+    : sch.enabled ? `Scheduler: ${sch.start} ${describeDays(sch.days)}` : "";
+}
+
+const scheduledCount = () =>
+  [...state.entries.values()].filter((e) => e.inSchedule && (e.status === "scheduled" || e.status === "downloading")).length;
+
+function renderSchedulerNow() {
+  const n = scheduledCount();
+  $("#sch-summary").textContent = scheduleRunning
+    ? `Running now · ${n} download${n === 1 ? "" : "s"} left`
+    : `${n} download${n === 1 ? "" : "s"} in the scheduler`;
+  $("#sch-run").textContent = scheduleRunning ? "Stop" : "Start now";
+  $("#sch-run").disabled = !scheduleRunning && n === 0;
+}
+
+async function openScheduler() {
+  await loadSettings();
+  await refreshScheduleRunning();
+  const sch = state.settings.schedule;
+  $("#sch-enabled").checked = sch.enabled;
+  $("#sch-start").value = sch.start;
+  $("#sch-has-stop").checked = sch.stop != null;
+  $("#sch-stop").value = sch.stop || "08:00";
+  $("#sch-stop").disabled = sch.stop == null;
+  [...$$("#sch-days input")].forEach((box, i) => { box.checked = sch.days[i]; });
+  $("#sch-when-done").value = sch.whenDone;
+  renderSchedulerNow();
+  $("#dlg-scheduler").showModal();
+}
+
+$("#btn-scheduler").onclick = () => openScheduler();
+$("#sch-has-stop").addEventListener("change", (e) => { $("#sch-stop").disabled = !e.target.checked; });
+$("#sch-run").onclick = async () => {
+  await call("set_schedule_running", { running: !scheduleRunning });
+  await refreshScheduleRunning();
+  renderSchedulerNow();
+};
+
+$("#form-scheduler").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const schedule = {
+    enabled: $("#sch-enabled").checked,
+    start: $("#sch-start").value || "02:00",
+    stop: $("#sch-has-stop").checked ? $("#sch-stop").value || "08:00" : null,
+    days: [...$$("#sch-days input")].map((b) => b.checked),
+    whenDone: $("#sch-when-done").value,
+  };
+  try {
+    await saveSettingsQuietly({ schedule });
+    $("#dlg-scheduler").close();
+    toast(schedule.enabled ? `Scheduled downloads start at ${schedule.start} ${describeDays(schedule.days)}` : "Scheduler saved");
+  } catch { /* toast already shown */ }
+});
+
+// "When done": a minute's warning before sleep or shutdown, which can be cancelled.
+let countdownTimer = null;
+function onScheduleDone() {
+  const action = state.settings?.schedule?.whenDone || "nothing";
+  if (action === "nothing") { toast("Scheduled downloads are finished"); return; }
+  const verb = action === "sleep" ? "go to sleep" : "shut down";
+  let left = 60;
+  const update = () => { $("#countdown-text").textContent = `The computer will ${verb} in ${left} seconds.`; };
+  update();
+  $("#countdown-now").textContent = action === "sleep" ? "Sleep now" : "Shut down now";
+  if (!$("#dlg-countdown").open) $("#dlg-countdown").showModal();
+  clearInterval(countdownTimer);
+  countdownTimer = setInterval(() => {
+    left -= 1;
+    update();
+    if (left <= 0) { finishCountdown(action); }
+  }, 1000);
+}
+
+function finishCountdown(action) {
+  clearInterval(countdownTimer);
+  $("#dlg-countdown").close();
+  call("power_action", { action }).catch(() => {});
+}
+
+$("#countdown-cancel").onclick = () => { clearInterval(countdownTimer); $("#dlg-countdown").close(); };
+$("#form-countdown").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  finishCountdown(state.settings.schedule.whenDone);
+});
+
 // ---------- Toast ----------
 
 let toastTimer = null;
@@ -757,11 +914,13 @@ window.addEventListener("unhandledrejection", (ev) => toast(`Unexpected error: $
 (async () => {
   await listen("downloads", (ev) => {
     const change = ev.payload;
-    if (change.kind === "list") setAll(change.data);
-    else updateOne(change.data);
+    if (change.kind === "list") { setAll(change.data); refreshScheduleRunning(); }
+    else if (change.kind === "updated") updateOne(change.data);
+    else if (change.kind === "scheduleDone") onScheduleDone();
   });
   await listen("browser-download", () => takeBrowserDownloads());
   setAll(await call("list"));
   await loadSettings();
+  refreshScheduleRunning();
   takeBrowserDownloads();
 })();
