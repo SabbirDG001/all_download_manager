@@ -594,6 +594,10 @@ async function openSettings() {
   $("#set-confirm-browser").checked = s.confirm_browser_downloads;
   $("#set-video-quality").value = s.video_quality || "best";
   $("#set-sort").checked = s.sort_into_folders;
+  $("#set-close-to-tray").checked = s.close_to_tray;
+  $("#set-autostart").checked = s.start_with_windows;
+  $("#set-notify").checked = s.notify_on_finish;
+  $("#set-complete-window").checked = s.show_complete_window;
   $("#set-limit").value = s.speed_limit_kbps;
   refreshTools();
   $("#set-info").textContent = info.portable
@@ -668,6 +672,10 @@ $("#form-settings").addEventListener("submit", async (ev) => {
     confirm_browser_downloads: $("#set-confirm-browser").checked,
     video_quality: $("#set-video-quality").value,
     sort_into_folders: $("#set-sort").checked,
+    close_to_tray: $("#set-close-to-tray").checked,
+    start_with_windows: $("#set-autostart").checked,
+    notify_on_finish: $("#set-notify").checked,
+    show_complete_window: $("#set-complete-window").checked,
     speed_limit_kbps: Number($("#set-limit").value),
   };
   try {
@@ -1116,6 +1124,8 @@ window.addEventListener("unhandledrejection", (ev) => toast(`Unexpected error: $
     else if (change.kind === "scheduleDone") onScheduleDone();
   });
   await listen("browser-download", () => takeBrowserDownloads());
+  // The tray menu can change settings (the speed limit).
+  await listen("settings-changed", () => loadSettings());
   setAll(await call("list"));
   await loadSettings();
   refreshScheduleRunning();

@@ -238,3 +238,37 @@ async fn scheduler_runs_its_downloads_only_when_active() {
     assert!(!m.schedule_active());
     assert_eq!(done_events.load(Ordering::SeqCst), 1);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn reports_each_finished_download_once() {
+    use std::sync::{Arc, Mutex};
+
+    let body = test_body(200_000);
+    let server = serve(body, true, Duration::from_millis(1)).await;
+    let dir = temp_dir("mgr-finished");
+    let finished = Arc::new(Mutex::new(Vec::new()));
+    let seen = finished.clone();
+    let settings = Settings { download_dir: dir.clone(), ..Default::default() };
+    let m = Manager::new(settings, dir.join("list.json"), Handle::current(), move |c| {
+        if let adm_engine::Change::Finished(e) = c {
+            seen.lock().unwrap().push((e.id, e.status));
+        }
+    });
+
+    let ok = add(&m, &server.url, "ok.bin");
+    let paused = add(&m, &server.url, "paused.bin");
+    m.pause(&[paused]);
+    // Nothing listens on port 1: the download fails.
+    let bad = m.add(AddRequest { url: "http://127.0.0.1:1/missing.bin".into(), ..Default::default() }).unwrap();
+    wait_for(&m, "done", |es| {
+        es.iter().find(|e| e.id == ok).unwrap().status == Status::Completed
+            && es.iter().find(|e| e.id == bad).unwrap().status == Status::Failed
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut got = finished.lock().unwrap().clone();
+    got.sort_by_key(|(id, _)| *id);
+    // The paused one is not "finished".
+    assert_eq!(got, [(ok, Status::Completed), (bad, Status::Failed)]);
+    assert_eq!(m.entry(ok).unwrap().status, Status::Completed);
+}

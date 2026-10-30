@@ -37,6 +37,14 @@ pub struct Settings {
     /// Save finished downloads in subfolders by type (Video, Music…).
     pub sort_into_folders: bool,
     pub schedule: Schedule,
+    /// Closing the window keeps the app running in the system tray.
+    pub close_to_tray: bool,
+    /// Start (in the tray) when signing in to Windows.
+    pub start_with_windows: bool,
+    /// A Windows notification when downloads finish or fail.
+    pub notify_on_finish: bool,
+    /// IDM-style "Download complete" window with Open / Open folder buttons.
+    pub show_complete_window: bool,
 }
 
 impl Default for Settings {
@@ -56,6 +64,10 @@ impl Default for Settings {
             speed_limit_on: false,
             sort_into_folders: false,
             schedule: Schedule::default(),
+            close_to_tray: true,
+            start_with_windows: false,
+            notify_on_finish: true,
+            show_complete_window: false,
         }
     }
 }

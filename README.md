@@ -44,6 +44,21 @@ The app uses Microsoft Edge WebView2, which Windows 10 and 11 already have.
 - Follows the Windows light or dark theme.
 - Keyboard: Ctrl+N add, Delete delete, Ctrl+A select all, Enter open, Esc deselect.
 
+## Tray and notifications
+
+- **System tray:** closing the window keeps downloads running in the
+  background (turn off "Keep running in the tray when closed" in Settings to
+  quit instead). Click the tray icon to open the window; right-click it for
+  Pause all, Resume all, Speed limit on/off and Quit. Hovering shows how many
+  downloads are running and the total speed.
+- **Start with Windows:** optional (Settings). The app then starts quietly in
+  the tray, so the scheduler and queued downloads keep working after a restart.
+- **Notifications:** a Windows notification when downloads finish or fail.
+  When many finish together, such as a playlist, they're grouped into one.
+  None are shown while you're looking at the app's window.
+- **"Download complete" window:** optional (Settings), like IDM's: shows the
+  finished file with **Open**, **Open folder** and **Close**.
+
 ## Playlists, channels and folders
 
 Click **Playlist / Folder** in the toolbar (or paste such a link into

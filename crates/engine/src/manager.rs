@@ -130,6 +130,8 @@ pub enum Change {
     Updated(Box<Entry>),
     /// The scheduled downloads are finished; time for the "when done" action.
     ScheduleDone,
+    /// A download finished (status Completed) or failed (status Failed).
+    Finished(Box<Entry>),
 }
 
 type Listener = dyn Fn(Change) + Send + Sync;
@@ -566,6 +568,7 @@ impl Manager {
     }
 
     fn finish(&self, id: u64, result: crate::Result<PathBuf>, opts: &DownloadOptions) {
+        let mut finished = None;
         self.changed(|inner| {
             let running = inner.running.remove(&id);
             match inner.entries.iter_mut().find(|e| e.id == id) {
@@ -613,10 +616,21 @@ impl Manager {
                             entry.error = Some(e.to_string());
                         }
                     }
+                    if matches!(entry.status, Status::Completed | Status::Failed) {
+                        finished = Some(entry.clone());
+                    }
                 }
             }
             self.schedule(inner);
         });
+        if let Some(entry) = finished {
+            (self.shared.listener)(Change::Finished(Box::new(entry)));
+        }
+    }
+
+    /// One download, by id.
+    pub fn entry(&self, id: u64) -> Option<Entry> {
+        self.shared.inner.lock().unwrap().entries.iter().find(|e| e.id == id).cloned()
     }
 }
 

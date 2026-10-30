@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod bridge;
+mod tray;
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -13,7 +14,8 @@ use adm_engine::{
 };
 use serde::Serialize;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, Manager as _, State, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager as _, State, WebviewWindow, WindowEvent};
+use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
@@ -92,10 +94,42 @@ fn get_settings(manager: State<Manager>) -> SettingsInfo {
 }
 
 #[tauri::command]
-fn save_settings(manager: State<Manager>, settings: Settings) -> CmdResult<()> {
+fn save_settings(app: AppHandle, manager: State<Manager>, settings: Settings) -> CmdResult<()> {
     settings.save().map_err(|e| e.to_string())?;
     manager.set_settings(settings);
+    sync_autostart(&app);
+    tray::sync(&app);
     Ok(())
+}
+
+/// One download, for the "Download complete" window.
+#[tauri::command]
+fn get_entry(manager: State<Manager>, id: u64) -> Option<Entry> {
+    manager.entry(id)
+}
+
+#[tauri::command]
+fn close_this_window(window: WebviewWindow) {
+    let _ = window.close();
+}
+
+/// Turns "start with Windows" on or off to match the settings.
+fn sync_autostart(app: &AppHandle) {
+    let want = app.state::<Manager>().settings().start_with_windows;
+    let launcher = app.autolaunch();
+    if launcher.is_enabled().unwrap_or(false) != want {
+        let result = if want { launcher.enable() } else { launcher.disable() };
+        if let Err(e) = result {
+            eprintln!("couldn't change start with Windows: {e}");
+        }
+    }
+}
+
+/// Shows the main window (from the tray, a second launch or the browser).
+pub fn show_main(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        bring_to_front(&window);
+    }
 }
 
 #[tauri::command]
@@ -316,6 +350,21 @@ fn handle_browser_request(app: &AppHandle, req: bridge::Request) -> Value {
     }
 }
 
+/// The first time the window is closed to the tray, say so.
+fn tell_once_about_tray(app: &AppHandle) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use tauri_plugin_notification::NotificationExt;
+    static TOLD: AtomicBool = AtomicBool::new(false);
+    if !TOLD.swap(true, Ordering::Relaxed) {
+        let _ = app
+            .notification()
+            .builder()
+            .title("Still running in the tray")
+            .body("Downloads continue in the background. Click the tray icon to open the window, or right-click it to quit.")
+            .show();
+    }
+}
+
 fn main() {
     if bridge::is_host_launch() {
         bridge::run_host();
@@ -324,28 +373,58 @@ fn main() {
 
     tauri::Builder::default()
         // A second launch just brings the open window to the front.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                bring_to_front(&window);
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec!["--minimized"]),
+        ))
+        .on_window_event(|window, event| {
+            if window.label() != "main" {
+                return;
             }
-        }))
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                let app = window.app_handle();
+                if app.state::<Manager>().settings().close_to_tray {
+                    // Keep downloading in the background; the tray icon brings it back.
+                    api.prevent_close();
+                    let _ = window.hide();
+                    tell_once_about_tray(app);
+                } else {
+                    app.exit(0);
+                }
+            }
+        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let settings = Settings::load().unwrap_or_default();
             let runtime = tauri::async_runtime::block_on(async { tokio::runtime::Handle::current() });
             let handle = app.handle().clone();
+            let (finished_tx, finished_rx) = tokio::sync::mpsc::unbounded_channel();
             let manager = Manager::new(
                 settings,
                 Settings::data_dir().join("downloads.json"),
                 runtime,
                 move |change| {
+                    if let adm_engine::Change::Finished(entry) = &change {
+                        let _ = finished_tx.send((**entry).clone());
+                    }
                     let _ = handle.emit("downloads", change);
                 },
             );
             app.manage(manager.clone());
             app.manage(PendingFromBrowser::default());
             tauri::async_runtime::spawn(run_scheduler_clock(manager));
+            tauri::async_runtime::spawn(tray::run_notifier(app.handle().clone(), finished_rx));
+            if let Err(e) = tray::create(app.handle()) {
+                eprintln!("couldn't create the tray icon: {e}");
+            }
+            sync_autostart(app.handle());
+            // Started with Windows: stay in the tray. Otherwise show the window.
+            if !std::env::args().any(|a| a == "--minimized") {
+                show_main(app.handle());
+            }
 
             if let Err(e) = bridge::register() {
                 eprintln!("couldn't register with the browsers: {e}");
@@ -386,6 +465,8 @@ fn main() {
             set_schedule_running,
             schedule_running,
             power_action,
+            get_entry,
+            close_this_window,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start All Download Manager");

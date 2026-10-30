@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Download complete</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="done-page">
+  <div class="done">
+    <div class="done-head">
+      <span class="done-check" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+      </span>
+      <div class="done-text">
+        <b id="done-name">Download complete</b>
+        <span id="done-info" class="muted small"></span>
+      </div>
+    </div>
+    <p id="done-path" class="done-path muted small"></p>
+    <div class="actions">
+      <button type="button" class="btn" id="done-close">Close</button>
+      <button type="button" class="btn" id="done-folder">Open folder</button>
+      <button type="button" class="btn primary" id="done-open">Open</button>
+    </div>
+  </div>
+  <script src="done.js"></script>
+</body>
+</html>
