@@ -272,6 +272,8 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
+Or, without a tag: **Actions → Release → Run workflow**, and enter the version (such as `v0.1.0`).
+
 The **Release** workflow builds the app and attaches `AllDownloadManager-Setup.exe`, `AllDownloadManager-Portable.zip`, `AllDownloadManager-Extension.zip` and `SHA256SUMS.txt` to a GitHub Release. The download links in this README always point at the latest one.
 
 ### How the browser connects

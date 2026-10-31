@@ -1,12 +1,22 @@
 name: Release
 
-# Publishing a version: push a tag such as v0.1.0. This builds the app on
-# Windows and attaches the files to a GitHub Release, with fixed names so
-# the README's "latest" download links always point at the newest version.
+# Publishing a version: push a tag such as v0.1.0, or run this workflow from
+# the Actions tab ("Run workflow") with the version. It builds the app on
+# Windows and attaches the files to a GitHub Release (creating the tag if
+# needed), with fixed names so the README's "latest" download links always
+# point at the newest version.
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish, such as v0.1.0"
+        required: true
+
+env:
+  VERSION: ${{ github.event.inputs.version || github.ref_name }}
 
 permissions:
   contents: write
@@ -61,7 +71,9 @@ jobs:
       - name: Publish the release
         uses: softprops/action-gh-release@v2
         with:
-          name: All Download Manager ${{ github.ref_name }}
+          tag_name: ${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
+          name: All Download Manager ${{ env.VERSION }}
           files: dist/*
           generate_release_notes: true
           body: |
