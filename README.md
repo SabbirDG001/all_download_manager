@@ -44,6 +44,49 @@ The app uses Microsoft Edge WebView2, which Windows 10 and 11 already have.
 - Follows the Windows light or dark theme.
 - Keyboard: Ctrl+N add, Delete delete, Ctrl+A select all, Enter open, Esc deselect.
 
+## Security and privacy
+
+What the app does to keep you and the people you share it with safe:
+
+- **Nothing leaves your computer** except the downloads themselves. The app
+  has no account, no telemetry and no servers of its own.
+- **Browser cookies** are sent with a download only so that files behind a
+  login still work. Only the cookies the browser itself would send are used
+  (a site starting a download from another site doesn't get that site's
+  SameSite=Strict cookies), and they're removed from the saved download list
+  as soon as the download finishes.
+- **The browser connection** only accepts the extension with this project's
+  ID, and the app only listens on `127.0.0.1` (your own computer) behind a
+  random password stored in your user folder.
+- **Helper programs** (yt-dlp, ffmpeg, Deno) are downloaded from their
+  official GitHub releases over HTTPS and checked against the SHA-256
+  checksums their publishers list; a file that doesn't match isn't installed.
+  They're run directly (never through a command shell), and links are passed
+  so they can't be mistaken for options.
+- **Files from servers** are saved with cleaned-up names: no folder tricks
+  (`..\`), no Windows device names, and nothing is overwritten. Downloaded
+  files are never opened or run by themselves, and the app's Open button only
+  opens files from its own download list.
+- **Folder listings** are limited (8 MB per page, 2,000 pages, 5,000 files),
+  so a hostile server can't keep the app busy forever.
+
+When you share the app:
+
+- Share the **installer or the portable download from GitHub**, not your own
+  portable folder: that one holds your settings and download list (unfinished
+  downloads keep their cookies until they finish, and FTP links keep their
+  passwords).
+- Each build comes with **`SHA256SUMS.txt`**. Anyone can check their copy in
+  PowerShell with `Get-FileHash "All Download Manager_0.1.0_x64-setup.exe"`
+  and compare the result.
+- The app isn't **code-signed** (that needs a paid certificate), so Windows
+  SmartScreen warns the first time it's run: **More info → Run anyway**. Tell
+  your friends to expect this, and to get it only from you or this
+  repository.
+- The browser extension asks for broad permissions (all sites, cookies,
+  downloads) because catching any download needs them. It only talks to the
+  app on the same computer.
+
 ## Download windows (like IDM)
 
 Downloads from the browser don't open the whole app:

@@ -16,6 +16,10 @@ use crate::{Error, Result};
 pub const MAX_ITEMS: usize = 5000;
 /// Deepest subfolder level that is followed.
 const MAX_DEPTH: usize = 10;
+/// Most folder pages read from one link, and the biggest page read: a
+/// hostile server can't keep the app busy forever or fill its memory.
+const MAX_PAGES: usize = 2000;
+const MAX_PAGE_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -248,7 +252,13 @@ async fn list_web_folder(root: &Url, headers: &[(String, String)]) -> Result<Col
     let mut seen = HashSet::new();
     let mut queue = VecDeque::from([(root.clone(), String::new(), 0usize)]);
     let mut title = None;
+    let mut pages = 0;
     while let Some((url, folder, depth)) = queue.pop_front() {
+        pages += 1;
+        if pages > MAX_PAGES {
+            truncated = true;
+            break;
+        }
         let resp = client.get(url.clone()).send().await?;
         if !resp.status().is_success() {
             if depth == 0 {
@@ -268,7 +278,12 @@ async fn list_web_folder(root: &Url, headers: &[(String, String)]) -> Result<Col
             }
             continue;
         }
-        let html = resp.text().await?;
+        let Some(html) = read_limited(resp, MAX_PAGE_BYTES).await? else {
+            if depth == 0 {
+                return Err(Error::Tool("This folder page is too big to read.".into()));
+            }
+            continue;
+        };
         if title.is_none() {
             title = Some(last_segment(&base).unwrap_or_else(|| base.host_str().unwrap_or("Folder").to_string()));
         }
@@ -303,6 +318,21 @@ async fn list_web_folder(root: &Url, headers: &[(String, String)]) -> Result<Col
         }
     }
     Ok(Collection { title: title.unwrap_or_else(|| "Folder".into()), kind: CollectionKind::Folder, items, truncated })
+}
+
+/// The page's text, or None if it's bigger than `limit` bytes.
+async fn read_limited(mut resp: reqwest::Response, limit: usize) -> Result<Option<String>> {
+    if resp.content_length().is_some_and(|len| len as usize > limit) {
+        return Ok(None);
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = resp.chunk().await? {
+        if body.len() + chunk.len() > limit {
+            return Ok(None);
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(Some(String::from_utf8_lossy(&body).into_owned()))
 }
 
 fn last_segment(url: &Url) -> Option<String> {

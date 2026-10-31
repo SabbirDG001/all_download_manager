@@ -35,11 +35,24 @@ jobs:
           # An empty settings.json next to the program turns on portable mode.
           Set-Content -Path portable/settings.json -Value '{}'
 
+      - name: Write checksums
+        shell: pwsh
+        run: |
+          # SHA-256 of what's shared, so people can check their download.
+          $files = @(Get-ChildItem target/release/bundle/nsis/*.exe) + @(Get-Item portable/AllDownloadManager.exe)
+          $lines = $files | ForEach-Object { "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name }
+          Set-Content -Path SHA256SUMS.txt -Value $lines
+          Copy-Item SHA256SUMS.txt target/release/bundle/nsis/
+          Copy-Item SHA256SUMS.txt portable/
+          Get-Content SHA256SUMS.txt
+
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
           name: AllDownloadManager-setup
-          path: target/release/bundle/nsis/*.exe
+          path: |
+            target/release/bundle/nsis/*.exe
+            target/release/bundle/nsis/SHA256SUMS.txt
 
       - name: Upload portable version
         uses: actions/upload-artifact@v4

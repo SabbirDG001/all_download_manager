@@ -304,11 +304,25 @@ async fn pick_folder(app: AppHandle, window: WebviewWindow, start: Option<String
 
 #[tauri::command]
 fn open_file(app: AppHandle, path: String) -> CmdResult<()> {
+    check_downloaded(&app, &path)?;
     app.opener().open_path(path, None::<&str>).map_err(|e| e.to_string())
+}
+
+/// Only files the app downloaded can be opened or shown: even if something
+/// ever got into the app's window, it couldn't run other programs.
+fn check_downloaded(app: &AppHandle, path: &str) -> CmdResult<()> {
+    let wanted = std::path::Path::new(path);
+    let known = app.state::<Manager>().entries().iter().any(|e| e.path.as_deref() == Some(wanted));
+    if known {
+        Ok(())
+    } else {
+        Err("That file isn't one of your downloads.".into())
+    }
 }
 
 #[tauri::command]
 fn show_in_folder(app: AppHandle, path: String) -> CmdResult<()> {
+    check_downloaded(&app, &path)?;
     app.opener().reveal_item_in_dir(path).map_err(|e| e.to_string())
 }
 

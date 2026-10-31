@@ -272,3 +272,22 @@ async fn reports_each_finished_download_once() {
     assert_eq!(got, [(ok, Status::Completed), (bad, Status::Failed)]);
     assert_eq!(m.entry(ok).unwrap().status, Status::Completed);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn finished_downloads_forget_the_browsers_cookies() {
+    let body = test_body(50_000);
+    let server = serve(body, true, Duration::ZERO).await;
+    let dir = temp_dir("mgr-cookies");
+    let m = manager(&dir, 3);
+    m.add(AddRequest {
+        url: server.url.clone(),
+        filename: Some("private.bin".into()),
+        headers: vec![("Cookie".into(), "session=SECRET123".into())],
+        ..Default::default()
+    })
+    .unwrap();
+    wait_for(&m, "done", |es| es[0].status == Status::Completed).await;
+    assert!(m.entries()[0].headers.is_empty());
+    let saved = std::fs::read_to_string(dir.join("list.json")).unwrap();
+    assert!(!saved.contains("SECRET123"), "the login cookie is still in the saved list");
+}

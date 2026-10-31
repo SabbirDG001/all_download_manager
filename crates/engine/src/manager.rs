@@ -194,6 +194,10 @@ impl Manager {
             if e.status == Status::Downloading {
                 e.status = Status::Paused;
             }
+            // Lists from older versions kept the browser's cookies for good.
+            if e.status == Status::Completed {
+                e.headers.clear();
+            }
         }
         let next_id = entries.iter().map(|e| e.id).max().unwrap_or(0) + 1;
         let limiter = Arc::new(RateLimiter::new(settings.speed_limit_bytes()));
@@ -598,6 +602,9 @@ impl Manager {
                     match result {
                         Ok(path) => {
                             entry.status = Status::Completed;
+                            // The browser's cookies (logins) were only needed to
+                            // download it; don't leave them in the saved list.
+                            entry.headers.clear();
                             if entry.kind == Kind::Media {
                                 // The size of the merged or converted file.
                                 if let Ok(meta) = std::fs::metadata(&path) {

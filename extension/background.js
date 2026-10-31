@@ -14,10 +14,36 @@ function isWebUrl(url) {
   return /^https?:\/\//i.test(url || "");
 }
 
-async function cookieHeader(url) {
+/** The site a host belongs to, roughly: "a.b.example.com" -> "example.com",
+ *  "x.example.co.uk" -> "example.co.uk". */
+function siteOf(host) {
+  const parts = host.split(".");
+  const short = parts.length > 2 && parts[parts.length - 2].length <= 3 && parts[parts.length - 1].length === 2;
+  return parts.slice(short ? -3 : -2).join(".");
+}
+
+function sameSite(url, referrer) {
   try {
+    return siteOf(new URL(url).hostname) === siteOf(new URL(referrer).hostname);
+  } catch {
+    return true; // no page to compare with: the user started it directly
+  }
+}
+
+/**
+ * The cookies the browser itself would send when opening `url` from `referrer`.
+ * When one site starts a download from another site, cookies that site marked
+ * SameSite=Strict stay out, as they would in the browser, so a page can't use
+ * the app to reach another site with someone's full login.
+ */
+async function cookieHeader(url, referrer) {
+  try {
+    const crossSite = referrer && !sameSite(url, referrer);
     const cookies = await chrome.cookies.getAll({ url });
-    return cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+    return cookies
+      .filter((c) => !crossSite || c.sameSite !== "strict")
+      .map((c) => `${c.name}=${c.value}`)
+      .join("; ");
   } catch {
     return "";
   }
@@ -40,7 +66,7 @@ async function sendDownload({ url, referrer = "", filename = "", media = false, 
     title,
     playlist,
     format,
-    cookies: await cookieHeader(url),
+    cookies: await cookieHeader(url, referrer),
     userAgent: navigator.userAgent,
   });
   setError(null);
@@ -219,7 +245,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
         action: "formats",
         url: msg.url,
         referrer: sender.tab?.url || msg.url,
-        cookies: await cookieHeader(msg.url),
+        cookies: await cookieHeader(msg.url, sender.tab?.url || msg.url),
         userAgent: navigator.userAgent,
       });
       return reply.info;
