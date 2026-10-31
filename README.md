@@ -1,334 +1,279 @@
+<div align="center">
+
+<img src="crates/app/icons/128x128.png" width="96" alt="">
+
 # All Download Manager
 
-A light, fast download manager for Windows, in the spirit of Internet Download
-Manager, with a browser extension for Chrome and Brave.
+**A free, light and fast download manager for Windows, in the spirit of Internet Download Manager (IDM).**
 
-## Status
+Faster downloads with multiple connections · pause and resume · YouTube and 1,000+ video sites with quality choice · whole playlists, FTP and server folders · Chrome, Brave and Edge integration
 
-| Step | Part | State |
-|---|---|---|
-| 1 | Download engine + command-line tool (`crates/engine`) | done |
-| 2 | Desktop app (`crates/app`, Tauri) with download list, queue, settings, installer | done |
-| 3 | Chrome / Brave / Edge extension (`extension/`) + Native Messaging bridge | done |
-| 4 | Video and audio: yt-dlp + ffmpeg, media detection in the browser | done |
-| 5 | Scheduler, categories, speed limit | done |
+[**⬇ Download for Windows**](#download) · [Setup guide](#setup-guide) · [Features](#features) · [FAQ](#faq--troubleshooting)
 
-## Getting the Windows app
+[![Build](https://github.com/SabbirDG001/all_download_manager/actions/workflows/build.yml/badge.svg)](https://github.com/SabbirDG001/all_download_manager/actions/workflows/build.yml)
+[![Latest release](https://img.shields.io/github/v/release/SabbirDG001/all_download_manager?label=latest)](https://github.com/SabbirDG001/all_download_manager/releases/latest)
 
-Every push builds the app on GitHub (see `.github/workflows/build.yml`).
-Open the repository's **Actions** tab, pick the latest **Build Windows app**
-run, and download one of:
+<img src="docs/screenshots/main-dark.png" alt="All Download Manager main window" width="900">
 
-- **AllDownloadManager-setup**: the installer. It asks whether to install for
-  you or for everyone, and lets you choose the install folder.
-- **AllDownloadManager-portable**: no install. Unzip anywhere (another drive,
-  a USB stick) and run `AllDownloadManager.exe`. Settings and the download
-  list stay in that folder.
-- **AllDownloadManager-extension**: the browser extension on its own (it is
-  also included in the installer and the portable folder).
+</div>
 
-The app uses Microsoft Edge WebView2, which Windows 10 and 11 already have.
+---
 
-## The desktop app
+## Download
 
-- Download list with progress, speed, time left and status, sorted newest first.
-- Filters: All, Downloading, Unfinished, Finished.
-- Queue: a set number of downloads run at once (3 by default), the rest wait.
-- Pause, resume, delete (optionally with the file), pause all, resume all,
-  clear finished. Paused downloads survive closing the app.
-- Add links with **Add URL**, by pressing Ctrl+V anywhere in the window, or by
-  dragging a link from the browser. Several links at once (one per line) work too.
-- Double-click a finished download to open it; right-click for more options.
-- Settings: download folder, temporary folder, connections per download,
-  downloads at the same time, user agent.
-- Follows the Windows light or dark theme.
-- Keyboard: Ctrl+N add, Delete delete, Ctrl+A select all, Enter open, Esc deselect.
+| File | What it is |
+|---|---|
+| [**AllDownloadManager-Setup.exe**](https://github.com/SabbirDG001/all_download_manager/releases/latest/download/AllDownloadManager-Setup.exe) | **Installer (recommended).** Choose "only for me" or "everyone", and the install folder. |
+| [AllDownloadManager-Portable.zip](https://github.com/SabbirDG001/all_download_manager/releases/latest/download/AllDownloadManager-Portable.zip) | **No installation.** Unzip anywhere (another drive, a USB stick) and run it. |
+| [AllDownloadManager-Extension.zip](https://github.com/SabbirDG001/all_download_manager/releases/latest/download/AllDownloadManager-Extension.zip) | The browser extension on its own (it's also inside both downloads above). |
+| [SHA256SUMS.txt](https://github.com/SabbirDG001/all_download_manager/releases/latest/download/SHA256SUMS.txt) | Checksums, to check your download is genuine (optional). |
+
+All versions are on the [Releases page](https://github.com/SabbirDG001/all_download_manager/releases).
+Works on **Windows 10 and 11** (64-bit). Free, with no ads, no account and no tracking.
+
+---
+
+## Features
+
+### ⚡ Fast, reliable downloads
+- **Multiple connections per file** (8 by default, up to 32) for much higher speed, like IDM.
+- **Smart splitting:** when one connection finishes, it helps the slowest one, so none sit idle.
+- **Pause and resume** any time, even after closing the app, a crash or a lost connection.
+- **Automatic retries** when the network hiccups.
+- **Queue:** a set number of downloads run at once; the rest wait their turn.
+
+### 🌐 Browser integration (Chrome, Brave, Edge)
+- **Catches your downloads** automatically and hands them to the app.
+- **Download button over videos** while you watch, with a menu of all the qualities right there.
+- **Right-click → "Download with All Download Manager"** on any link, image, video or audio.
+- **Finds video and audio** playing on a page (including HLS/DASH streams) and lists them in the extension's popup.
+- **Keeps you logged in:** downloads that need a login work, because the browser's cookies come along.
+- **Never loses a download:** if the app isn't available, the browser simply downloads as usual.
+
+### 🎬 YouTube and 1,000+ video sites
+- **Choose the exact quality**, like IDM: 4K, 1440p, 1080p60, 720p … 144p, each with its size.
+- **Audio only:** MP3 at 320, 192 or 128 kbps, or the original M4A/Opus.
+- Works with YouTube, Facebook, Instagram, TikTok, X/Twitter, Vimeo, Dailymotion, Twitch, SoundCloud and [many more](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md).
+
+<p align="center">
+<img src="docs/screenshots/page-menu.png" alt="Quality menu over a video in the browser" width="49%">
+<img src="docs/screenshots/quality-picker.png" alt="Quality picker in the app" width="49%">
+</p>
+
+### 📚 Whole playlists, channels and folders
+- **YouTube playlists and channels:** tick the videos you want and pick one quality for all.
+- **FTP servers** (`ftp://…`), with all subfolders, and a login if needed.
+- **Server folders** ("Index of /" pages and h5ai, as used by many media and BDIX servers), with all subfolders.
+- Everything lands in a folder named after the playlist or folder, keeping its structure.
+
+<p align="center"><img src="docs/screenshots/playlist.png" alt="Downloading a whole playlist" width="80%"></p>
+
+### 🪟 IDM-style windows
+- **Download File Info** window for each link from the browser: folder, file name or quality, size, **Start Download** or **Download Later**.
+- **Progress window** per download: speed, time left, resume capability and each connection's progress.
+- **Download complete**, with **Open** and **Open folder**.
+
+<p align="center"><img src="docs/screenshots/progress.png" alt="Progress window with connection details" width="460"></p>
+
+### 🗓 Scheduler, speed limit and more
+- **Scheduler:** download at night (start and stop times, days of the week), then **sleep or shut down** the PC when done.
+- **Speed limit**, switched on and off from the toolbar or the tray icon.
+- **Categories:** Video, Music, Documents, Compressed, Programs, Images, optionally saved into matching folders.
+- **System tray:** keeps downloading in the background; **start with Windows** if you like.
+- **Notifications** when downloads finish or fail.
+- **Light and dark theme**, following Windows.
+- **Your choice of folders:** download folder, temporary folder and install folder, or run it portable.
+
+<p align="center"><img src="docs/screenshots/scheduler.png" alt="Scheduler" width="80%"></p>
+
+---
+
+## Setup guide
+
+### 1. Install the app
+1. Download **[AllDownloadManager-Setup.exe](https://github.com/SabbirDG001/all_download_manager/releases/latest/download/AllDownloadManager-Setup.exe)** and run it.
+2. Windows may say **"Windows protected your PC"**. This is because the app isn't code-signed (that needs a paid certificate). Click **More info → Run anyway**.
+3. Choose **Only for me** (no admin rights needed) or **Anyone who uses this computer**, then the **install folder** (any drive is fine).
+4. Finish, and start **All Download Manager** from the Start menu.
+
+> **Portable instead?** Download **[AllDownloadManager-Portable.zip](https://github.com/SabbirDG001/all_download_manager/releases/latest/download/AllDownloadManager-Portable.zip)**, unzip it where you want (for example `D:\Apps\ADM`), and run `AllDownloadManager.exe`. Keep the `settings.json` next to it: it keeps your settings and download list in that folder.
+
+### 2. First start
+**Open the app once.** This also connects it to your browsers. Then click **Settings** (top right):
+
+1. **Download folder:** where your files go.
+2. Under **Video and audio**, click **Install** next to each helper. They're needed for video sites:
+
+   | Helper | Needed for | Size |
+   |---|---|---|
+   | **yt-dlp** | YouTube and other video sites | ~18 MB |
+   | **ffmpeg** | 1080p and higher, and MP3 | ~130 MB |
+   | **Deno** | YouTube (yt-dlp needs it) | ~40 MB |
+
+   If a row says *"already on your computer, ready to use"*, nothing is needed for it.
+3. Choose any other options you like (tray, start with Windows, notifications…) and click **Save**.
+
+### 3. Add the browser extension
+The extension isn't in the Chrome Web Store, so it's added once by hand. It takes a minute:
+
+1. In the app, open **Settings → Show extension folder**. That folder is the extension.
+   *(It's also in the install folder, inside the portable folder, and in [AllDownloadManager-Extension.zip](https://github.com/SabbirDG001/all_download_manager/releases/latest/download/AllDownloadManager-Extension.zip).)*
+2. Open your browser's extensions page:
+
+   | Chrome | Brave | Edge |
+   |---|---|---|
+   | `chrome://extensions` | `brave://extensions` | `edge://extensions` |
+
+3. Turn on **Developer mode** (top right; in Edge, on the left).
+4. Click **Load unpacked** and choose the **extension** folder from step 1.
+5. Click the puzzle-piece icon in the toolbar and **pin** All Download Manager.
+
+Don't move or delete that folder afterwards: the browser keeps using it.
+
+### 4. Check it works
+- Click the extension's icon: it should say **"Connected to the app"** (or *"App installed; it starts when needed"*).
+- Download any file in the browser: the **Download File Info** window should appear.
+- On a YouTube video, point at the video and click **Download**: the list of qualities should appear.
+
+---
+
+## How to use
+
+| To… | Do this |
+|---|---|
+| Download a file | Just download it in the browser. Or click **Add URL** (or press **Ctrl+V** in the app) and paste the link. |
+| Download a video | Point at the video in the browser → **Download** → pick a quality. Or paste the link into **Add URL**. |
+| Get only the audio | Pick **MP3** or **M4A** in the quality list. |
+| Download a playlist, channel or folder | **Playlist / Folder** in the app, or **Whole playlist** in the extension's popup on YouTube. |
+| Download from an FTP server | **Playlist / Folder** → `ftp://server/folder/` (or `ftp://user:password@server/folder/`). |
+| Download later or at night | **Download Later**, or right-click → **Add to the scheduler**, then set the time in **Scheduler**. |
+| Limit the speed | Set it in **Settings**, then switch it on and off with the **Limit** button or the tray icon. |
+| See why something failed | The reason is shown in red under its name; right-click → **Copy error**. |
+
+Keyboard: **Ctrl+N** add, **Ctrl+V** paste a link, **Delete** delete, **Ctrl+A** select all, **Enter** open, **Esc** deselect.
+
+---
+
+## FAQ / troubleshooting
+
+<details>
+<summary><b>Windows says "Windows protected your PC"</b></summary>
+
+The app isn't code-signed, so SmartScreen warns the first time. Click **More info → Run anyway**. Only download it from this page, and compare it with `SHA256SUMS.txt` if you want to be sure (in PowerShell: `Get-FileHash .\AllDownloadManager-Setup.exe`).
+</details>
+
+<details>
+<summary><b>The extension says "App not found"</b></summary>
+
+Open the app once (it connects itself to the browsers when it starts), then reopen the browser. With the portable version, open it again after moving its folder.
+</details>
+
+<details>
+<summary><b>YouTube videos fail, or the qualities never appear</b></summary>
+
+Install **yt-dlp**, **ffmpeg** and **Deno** in **Settings → Video and audio**. If it worked before and then stopped, click **Update** next to yt-dlp: sites change often. The first video after starting the app can take a little longer.
+</details>
+
+<details>
+<summary><b>Downloads aren't caught from the browser</b></summary>
+
+Check that **Catch browser downloads** is on in the extension's popup. Downloads in incognito windows always stay in the browser.
+</details>
+
+<details>
+<summary><b>Where did the app go when I closed it?</b></summary>
+
+It keeps downloading in the **system tray** (bottom right, maybe under the **^** arrow). Right-click the icon → **Quit** to exit. You can turn this off in Settings.
+</details>
+
+<details>
+<summary><b>Can it download from Netflix, Spotify or Disney+?</b></summary>
+
+No. Those services use DRM copy protection, which no download manager (IDM included) can get around.
+</details>
+
+<details>
+<summary><b>How do I update?</b></summary>
+
+Quit the app from the tray, then download the newest installer and run it over the old version. Your settings and download list are kept. For the extension, replace its folder with the new one and click **↻ reload** on its card in the extensions page.
+</details>
+
+<details>
+<summary><b>How do I uninstall?</b></summary>
+
+Windows **Settings → Apps → All Download Manager → Uninstall** (portable: just delete its folder). Remove the extension from the browser's extensions page. Your settings and download list stay in `%APPDATA%\AllDownloadManager`; delete that folder to remove them too.
+</details>
+
+---
 
 ## Security and privacy
 
-What the app does to keep you and the people you share it with safe:
+- **Nothing leaves your computer** except the downloads themselves: no account, no telemetry, no servers of its own.
+- **Browser cookies** are used only so files behind a login still download. Only the cookies the browser itself would send are used, and they're removed from the saved download list as soon as a download finishes.
+- **The browser connection** only accepts this project's extension, and the app only listens on your own computer (`127.0.0.1`) behind a random password.
+- **Helpers** (yt-dlp, ffmpeg, Deno) come from their official GitHub releases and are checked against their published SHA-256 checksums before they're installed.
+- **Downloaded files** get safe names, are never overwritten, and are never opened or run by themselves.
+- **Sharing tip:** share this page or the files from the Releases page, not your own portable folder (it contains your settings and download list).
 
-- **Nothing leaves your computer** except the downloads themselves. The app
-  has no account, no telemetry and no servers of its own.
-- **Browser cookies** are sent with a download only so that files behind a
-  login still work. Only the cookies the browser itself would send are used
-  (a site starting a download from another site doesn't get that site's
-  SameSite=Strict cookies), and they're removed from the saved download list
-  as soon as the download finishes.
-- **The browser connection** only accepts the extension with this project's
-  ID, and the app only listens on `127.0.0.1` (your own computer) behind a
-  random password stored in your user folder.
-- **Helper programs** (yt-dlp, ffmpeg, Deno) are downloaded from their
-  official GitHub releases over HTTPS and checked against the SHA-256
-  checksums their publishers list; a file that doesn't match isn't installed.
-  They're run directly (never through a command shell), and links are passed
-  so they can't be mistaken for options.
-- **Files from servers** are saved with cleaned-up names: no folder tricks
-  (`..\`), no Windows device names, and nothing is overwritten. Downloaded
-  files are never opened or run by themselves, and the app's Open button only
-  opens files from its own download list.
-- **Folder listings** are limited (8 MB per page, 2,000 pages, 5,000 files),
-  so a hostile server can't keep the app busy forever.
+---
 
-When you share the app:
+## Credits
 
-- Share the **installer or the portable download from GitHub**, not your own
-  portable folder: that one holds your settings and download list (unfinished
-  downloads keep their cookies until they finish, and FTP links keep their
-  passwords).
-- Each build comes with **`SHA256SUMS.txt`**. Anyone can check their copy in
-  PowerShell with `Get-FileHash "All Download Manager_0.1.0_x64-setup.exe"`
-  and compare the result.
-- The app isn't **code-signed** (that needs a paid certificate), so Windows
-  SmartScreen warns the first time it's run: **More info → Run anyway**. Tell
-  your friends to expect this, and to get it only from you or this
-  repository.
-- The browser extension asks for broad permissions (all sites, cookies,
-  downloads) because catching any download needs them. It only talks to the
-  app on the same computer.
+All Download Manager is built with [Rust](https://www.rust-lang.org) and [Tauri](https://tauri.app). Video downloads use [yt-dlp](https://github.com/yt-dlp/yt-dlp), [FFmpeg](https://ffmpeg.org) and [Deno](https://deno.com), which the app downloads from their official releases when you ask for them.
 
-## Download windows (like IDM)
+---
 
-Downloads from the browser don't open the whole app:
+## For developers
 
-- **Download File Info:** a small window with the link, the folder, the file
-  name (or, for videos, the quality) and the size, with **Download Later**,
-  **Start Download** and **Cancel**. Turn off "Ask before downloading links
-  from the browser" in Settings to skip it.
-- **Progress window:** each started download gets its own small window with
-  status, size, downloaded, speed, time left and resume capability, **Pause**
-  and **Cancel**. **Show details** shows every connection's start position
-  and progress. When it's done, it offers **Open** and **Open folder**. It can
-  be turned off in Settings; double-click a download in the list to open it
-  again.
-- **Quality menu on video pages:** on YouTube and other video sites, the
-  **Download** button over a video lists the available qualities (4K … 144p,
-  MP3, M4A) with their sizes, right on the page.
+<details>
+<summary><b>Project layout, building, tests and releases</b></summary>
 
-If a download fails, the reason is shown in red under its name in the list
-(right-click → **Copy error** to copy it).
+### Layout
+| Path | What it is |
+|---|---|
+| `crates/engine` | Download engine (library and `adm` command-line tool): segmented HTTP downloads, resume, FTP, yt-dlp, playlists and folders, scheduler, speed limit. |
+| `crates/app` | The desktop app (Tauri 2): Rust backend in `src/`, plain HTML/CSS/JS interface in `ui/`. |
+| `extension` | The Chrome/Brave/Edge extension (Manifest V3). |
+| `docs/screenshots` | Pictures used in this README. |
+| `.github/workflows` | `build.yml` builds and tests every push; `release.yml` publishes a release for each `v*` tag. |
 
-## Tray and notifications
+### Build
+You need [Rust](https://rustup.rs) (on Windows, the MSVC toolchain) and [Node.js](https://nodejs.org) (only for the Tauri CLI).
 
-- **System tray:** closing the window keeps downloads running in the
-  background (turn off "Keep running in the tray when closed" in Settings to
-  quit instead). Click the tray icon to open the window; right-click it for
-  Pause all, Resume all, Speed limit on/off and Quit. Hovering shows how many
-  downloads are running and the total speed.
-- **Start with Windows:** optional (Settings). The app then starts quietly in
-  the tray, so the scheduler and queued downloads keep working after a restart.
-- **Notifications:** a Windows notification when downloads finish or fail.
-  When many finish together, such as a playlist, they're grouped into one.
-  None are shown while you're looking at the app's window.
-- **"Download complete" window:** optional (Settings), like IDM's: shows the
-  finished file with **Open**, **Open folder** and **Close**.
-
-## Playlists, channels and folders
-
-Click **Playlist / Folder** in the toolbar (or paste such a link into
-**Add URL** and click **Download all…**) and the app lists everything behind
-the link:
-
-- **YouTube playlists and channels** (and playlists on other video sites).
-  A channel's Videos, Shorts and Live tabs are each put in their own folder.
-  Needs yt-dlp.
-- **FTP servers:** `ftp://server/folder/`, including all subfolders. Add a
-  user name and password as `ftp://user:password@server/folder/`; without
-  them the app logs in anonymously. Interrupted FTP downloads continue where
-  they stopped.
-- **Web folders:** "Index of /" pages (Apache, nginx, IIS) and h5ai, as used by
-  many media and "FTP" servers, including all subfolders.
-- **Pages with several videos** on them.
-
-Tick the items you want (search by name or show one type, such as Video), pick
-the quality for every video (resolution or MP3/M4A), and click **Download**.
-Everything goes into a folder named after the playlist or folder, keeping its
-subfolders. They can also go to the scheduler or be added paused. Up to 5,000
-items are listed per link.
-
-In the browser, the extension's popup shows **Whole playlist** on YouTube
-playlist and channel pages.
-
-## Speed limit, categories and scheduler
-
-- **Speed limit:** the **No limit / Limit** button in the toolbar turns it on
-  and off; the speed (KB/s) is set in Settings. It is shared by all
-  downloads and changes running downloads straight away (video downloads
-  pick up a new limit when they next start).
-- **Categories:** the sidebar groups downloads by type: Video, Music,
-  Documents, Compressed, Programs, Images and Other. Turn on **Sort finished
-  downloads into folders by type** in Settings to save them in matching
-  subfolders of the download folder (`Downloads\Video`, `Downloads\Music`…).
-  Downloads saved to a folder you picked yourself are left where you put them.
-- **Scheduler:** add downloads to the scheduler from the Add dialog
-  ("When: Add to the scheduler") or by right-clicking them. In
-  **Scheduler**, choose the start time, an optional stop time (windows past
-  midnight work, such as 23:00–07:00) and the days. At the start time the
-  scheduled downloads begin; at the stop time they pause until the next
-  window. **Start now** runs them at once. When they are all done, the
-  computer can **sleep** or **shut down**, after a 60-second warning you can
-  cancel.
-
-## Video and audio
-
-The app downloads from YouTube and
-[over a thousand other sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md),
-and from HLS/DASH streams, using two free helper programs:
-
-- **yt-dlp** gets the video out of the site. Required for video downloads.
-- **ffmpeg** joins separate video and audio (needed for 1080p and up on
-  YouTube) and makes MP3s. Without it you get the best single file the site offers.
-- **Deno**, a JavaScript runtime that yt-dlp needs for **YouTube**. Without it
-  YouTube downloads fail. If Node.js is already installed, it is used instead
-  and Deno isn't needed.
-
-Install them from **Settings → Video and audio** (Install / Update buttons).
-They go into a `tools` folder in the app's data folder (in portable mode,
-next to the program), and copies already on your `PATH` are used too. Keep
-yt-dlp updated: sites change often and new versions follow them.
-
-To download a video:
-
-- Paste the page's link into **Add URL**. Links from known video sites (and
-  `.m3u8`/`.mpd` streams) are ticked as **Video or audio page** automatically.
-- Pick the quality from the list, like in IDM. The app asks the site which
-  versions it has and shows each with its estimated size:
-  - **Video:** every resolution offered, such as 2160p (4K), 1440p,
-    1080p60, 720p … 144p.
-  - **Audio only:** MP3 at 320, 192 or 128 kbps, or the site's original
-    M4A or Opus track at its real bitrate.
-
-  The choice preselected follows the default quality in Settings (Best, up
-  to 1080p/720p/480p, or audio only), so for most downloads you just click
-  **Download**. A small tag in the list shows what was chosen.
-- Or, in the browser, use the **Download** button on the video (see below).
-
-Videos are named after their title. Pause and resume work too (yt-dlp keeps
-its partial files). DRM-protected services (Netflix, Spotify, Disney+ and
-similar) can't be downloaded.
-
-## Browser extension (Chrome, Brave, Edge)
-
-### Install
-
-1. Install the app and **open it once**. On every start it registers itself
-   with Chrome, Brave and Edge so the extension can reach it.
-2. In the browser, open `chrome://extensions` (Brave: `brave://extensions`,
-   Edge: `edge://extensions`) and turn on **Developer mode**.
-3. Click **Load unpacked** and choose the `extension` folder. To find it, open
-   the app's **Settings** and click **Show extension folder**. (It is in the
-   install folder, or next to `AllDownloadManager.exe` in the portable version.)
-4. Pin the extension. Its popup shows whether it can reach the app.
-
-### What it does
-
-- **Catches downloads:** when you download a file, the browser's download is
-  stopped and the app takes over. Turn this off in the extension's popup.
-- **Right-click menu:** "Download link with All Download Manager" on links,
-  images, video and audio.
-- **Download button on videos:** point at a video and a **Download** button
-  appears in its corner. On video sites the page goes to yt-dlp; elsewhere the
-  stream or file the page is playing is used. Can be turned off in the popup.
-- **Finds media:** video, audio and HLS/DASH streams that pages load are
-  counted on the extension icon and listed in its popup, each with a
-  download button.
-- **Keeps you logged in:** the browser's cookies, referrer and user agent are
-  sent with the link, so downloads that need a login still work.
-- **Asks first:** the app comes to the front with the download dialog, so you
-  can change the folder or name. Turn off "Ask before downloading links from
-  the browser" in Settings to start them straight away.
-- **Starts the app** if it isn't running.
-- **Never loses a download:** if the app can't be reached, the browser carries
-  on downloading as usual and the extension icon shows a "!".
-
-Downloads in incognito windows, and `blob:`/`data:` downloads made by web
-pages themselves, stay in the browser.
-
-### How it connects
-
-The browser starts `AllDownloadManager.exe` as a
-[Native Messaging](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging)
-host. That short-lived process passes the link to the running app over a
-local connection (127.0.0.1, protected by a random token stored in the data
-folder), starting the app first if needed. The extension's ID is fixed by
-the `key` in `extension/manifest.json`, so the registration works wherever
-the folder is unpacked.
-
-## The engine
-
-- **Parallel connections:** splits a file into segments and downloads them at
-  the same time using HTTP `Range` requests (8 by default, up to 32).
-- **Dynamic splitting:** when a connection finishes its segment, it takes over
-  the second half of the biggest segment still running, so no connection sits idle.
-- **Resume:** progress is saved to `<name>.admpart.json` next to the partial
-  file `<name>.admpart`. Run the same download again (after Ctrl+C, a crash or
-  a lost connection) and it continues where it stopped. If the file changed on
-  the server (different size or ETag), it starts over.
-- **Retries:** network errors are retried with backoff. A failed connection's
-  segment is picked up by the others.
-- **Fallback:** servers without range support get one plain connection.
-- **Safe file names:** characters Windows rejects are replaced, and an
-  existing file is never overwritten (`file (1).zip` is used instead).
-
-## Storage and install location
-
-- **Download folder:** set once with `adm config set download-dir D:\Downloads`,
-  or per download with `-d`.
-- **Temp folder:** partial files can live elsewhere, e.g. on a faster drive:
-  `adm config set temp-dir E:\Temp`. Use the same drive as the download folder
-  for an instant move when finished.
-- **Settings file:** `%APPDATA%\AllDownloadManager\settings.json`.
-- **Portable mode:** put an empty-object `settings.json` (`{}`) next to the program
-  (`AllDownloadManager.exe` or `adm.exe`) and settings and the download list are kept in that folder instead, so the app can
-  live anywhere, such as a USB stick or `D:\Apps`.
-- **Install location:** the installer lets you choose the install folder, or
-  use the portable version and put it wherever you like.
-
-## Building it yourself
-
-You need [Rust](https://rustup.rs) (on Windows, the MSVC toolchain) and
-[Node.js](https://nodejs.org) (only for the Tauri build tool).
-
-```
+```bash
 cd crates/app
 npx @tauri-apps/cli@2 build
 ```
 
-The installer ends up in `target\release\bundle\nsis\`. To run the app
-while working on it: `npx @tauri-apps/cli@2 dev`.
+The installer ends up in `target\release\bundle\nsis\`. While working on the app: `npx @tauri-apps/cli@2 dev`.
 
-## Command-line tool
+The engine also has a command-line tool, `adm`, which uses the same settings:
 
-`adm` uses the same engine and settings as the app.
-
-```
-cargo build --release -p adm-engine
+```bash
+cargo run --release -p adm-engine -- get https://example.com/big.zip -c 16
 ```
 
-The program is `target\release\adm.exe`.
+### Tests
 
-```
-adm get https://example.com/big.zip
-adm get https://example.com/big.zip -d D:\Downloads -c 16
-adm get https://example.com/file -o name.zip -H "Cookie: session=abc" -H "Referer: https://example.com/"
-adm config show
-adm config set connections 16
-```
-
-Press Ctrl+C to pause. Run the same command again to resume.
-
-## Tests
-
-```
+```bash
 cargo test
 ```
 
-The tests run against a small local HTTP server and check segmented downloads,
-the single-connection fallback, not overwriting files, resuming after a pause,
-and the download list (queue limit, pause/resume, delete, surviving a restart,
-speed limit, sorting into folders, and the scheduler's time windows).
-Folder downloads are tested against a local web folder and, if Python's
-`pyftpdlib` is installed, a real FTP server (including resuming over FTP).
-If yt-dlp and ffmpeg are on `PATH`, a test also downloads a local HLS stream
-and extracts MP3 audio with them. `cargo test -- --ignored` additionally
-installs yt-dlp from GitHub.
+They run against local test servers: segmented downloads, resume, the queue, speed limit, scheduler and web folders, plus a real FTP server (if Python's `pyftpdlib` is installed) and yt-dlp with ffmpeg (if they're on `PATH`). `cargo test -- --ignored` also installs yt-dlp from GitHub.
+
+### Publishing a release
+Update the version in `Cargo.toml` and `crates/app/tauri.conf.json`, commit, then push a tag:
+
+```bash
+git tag v0.1.0
+```
+
+```bash
+git push origin v0.1.0
+```
+
+The **Release** workflow builds the app and attaches `AllDownloadManager-Setup.exe`, `AllDownloadManager-Portable.zip`, `AllDownloadManager-Extension.zip` and `SHA256SUMS.txt` to a GitHub Release. The download links in this README always point at the latest one.
+
+### How the browser connects
+The extension talks to the app through Chrome's [Native Messaging](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging). The browser starts `AllDownloadManager.exe` as a short-lived host, which passes the request to the running app over `127.0.0.1` (protected by a random token in the data folder), starting the app first if needed. The extension's ID is fixed by the `key` in `extension/manifest.json`, so this works wherever the folder is unpacked.
+</details>

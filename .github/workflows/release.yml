@@ -1,0 +1,73 @@
+name: Release
+
+# Publishing a version: push a tag such as v0.1.0. This builds the app on
+# Windows and attaches the files to a GitHub Release, with fixed names so
+# the README's "latest" download links always point at the newest version.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test the engine
+        run: cargo test -p adm-engine
+
+      - name: Build the installer
+        working-directory: crates/app
+        run: npx --yes @tauri-apps/cli@2 build
+
+      - name: Package the files
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist, portable | Out-Null
+
+          # Installer, under a name that doesn't change between versions.
+          $setup = Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          Copy-Item $setup.FullName dist/AllDownloadManager-Setup.exe
+
+          # Portable: the program, the extension, and settings.json ({}) that
+          # keeps settings and the download list in the same folder.
+          Copy-Item target/release/AllDownloadManager.exe portable/
+          Copy-Item -Recurse extension portable/extension
+          Set-Content -Path portable/settings.json -Value '{}'
+          Compress-Archive -Path portable/* -DestinationPath dist/AllDownloadManager-Portable.zip
+
+          # The browser extension on its own (unzips to an "extension" folder).
+          Compress-Archive -Path extension -DestinationPath dist/AllDownloadManager-Extension.zip
+
+          # Checksums, so anyone can check their download.
+          $lines = Get-ChildItem dist/* | ForEach-Object {
+            "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name
+          }
+          Set-Content -Path dist/SHA256SUMS.txt -Value $lines
+          Get-Content dist/SHA256SUMS.txt
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: All Download Manager ${{ github.ref_name }}
+          files: dist/*
+          generate_release_notes: true
+          body: |
+            **Download:** `AllDownloadManager-Setup.exe` (installer), or `AllDownloadManager-Portable.zip` (no installation).
+            The browser extension is included in both, and also in `AllDownloadManager-Extension.zip`.
+
+            See the [setup guide](https://github.com/${{ github.repository }}#setup-guide) for installation steps.
+            Windows SmartScreen warns the first time because the app isn't code-signed: click **More info → Run anyway**.
+            Check your download against `SHA256SUMS.txt` if you like.
